@@ -1,0 +1,78 @@
+IDIAMA AGRO — Mise en route de la base de données
+==================================================
+
+Il y a 4 étapes. Comptez 10 minutes.
+
+
+ÉTAPE 1 — Créer le projet Supabase
+-----------------------------------
+1. Allez sur  https://supabase.com  et connectez-vous.
+2. Cliquez sur « New project ».
+3. Name        : idiama-agro
+   Password    : choisissez un mot de passe et NOTEZ-LE quelque part.
+   Region      : « West EU (London) » ou « Central EU (Frankfurt) »
+                 (les plus rapides depuis la Guinée)
+4. Cliquez « Create new project » et attendez ~2 minutes.
+
+
+ÉTAPE 2 — Éteindre la confirmation par e-mail
+----------------------------------------------
+C'est indispensable : les gérants et fermiers se connectent avec un
+identifiant, pas avec une vraie adresse e-mail. Sans cette étape,
+aucun compte créé depuis l'application ne pourra se connecter.
+
+1. Menu de gauche : Authentication
+2. Onglet : Sign In / Providers  →  Email
+3. DÉCOCHEZ « Confirm email »
+4. Cliquez « Save »
+
+
+ÉTAPE 3 — Installer la base
+----------------------------
+1. Menu de gauche : SQL Editor  →  bouton « New query »
+2. Ouvrez le fichier  01_idiama_base.sql , copiez TOUT son contenu,
+   collez-le, puis cliquez « Run ».
+   → En bas, un petit tableau doit afficher des ✅ partout.
+
+3. Nouvelle requête (« New query »).
+4. Ouvrez le fichier  02_idiama_admin.sql , copiez TOUT, collez, « Run ».
+   → Si un message dit « must be owner of table users »,
+     répondez « Run without RLS » et relancez.
+   → Le tableau doit dire : « prêt — identifiant admin ✅ »
+
+
+ÉTAPE 4 — Me donner les deux adresses
+--------------------------------------
+1. Menu de gauche : Project Settings (la roue dentée)  →  API
+2. Copiez les deux valeurs :
+      • Project URL      (elle ressemble à https://xxxxx.supabase.co)
+      • anon public      (une très longue suite de caractères)
+3. Envoyez-les moi : je les mets dans l'application et je vous livre
+   l'APK et l'AAB.
+
+
+PREMIÈRE CONNEXION DANS L'APPLICATION
+--------------------------------------
+   Identifiant   : admin
+   Mot de passe  : Admin2024!
+
+Changez ce mot de passe dès la première connexion :
+   photo en haut à droite  →  Mon compte  →  Nouveau mot de passe.
+
+Ensuite, depuis l'espace administrateur :
+   1. Fermes  →  créer vos fermes,
+   2. dans chaque ferme  →  « Ajouter » un bâtiment (nb de poules,
+      prix de l'alvéole),
+   3. Équipe  →  « Créer un espace » pour chaque gérant et chaque fermier,
+   4. dans la ferme  →  bouton « Équipe » pour attribuer le gérant
+      et cocher les fermiers.
+
+
+LA CLÉ DE SIGNATURE — À NE JAMAIS PERDRE
+-----------------------------------------
+   C:\Users\bassi\cles\idiama-agro.jks
+
+C'est la carte d'identité de l'application. Sans ce fichier, plus aucune
+mise à jour ne pourra s'installer par-dessus l'application existante :
+il faudrait tout désinstaller et tout ressaisir. Gardez-en une copie
+sur une clé USB et dans votre e-mail.

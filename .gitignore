@@ -1,0 +1,33 @@
+# ── SECRETS : ne doivent JAMAIS partir sur GitHub ────────────────────
+# key.properties contient les mots de passe de la clé de signature,
+# et la clé elle-même (.jks) vit hors du projet, dans C:\Users\bassi\cles.
+android/key.properties
+*.jks
+*.keystore
+
+# ── Fabrication ──────────────────────────────────────────────────────
+# Le dossier build/ est régénéré à chaque compilation ; c'est le dossier
+# site/ (copie du build web) que Vercel publie.
+/build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+
+# ── Android ──────────────────────────────────────────────────────────
+android/.gradle/
+android/local.properties
+android/app/debug/
+android/app/profile/
+android/app/release/
+android/.idea/
+*.iml
+
+# ── Éditeurs et système ──────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db

@@ -1,0 +1,15 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "idiama-web",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:\\Users\\bassi\\AppData\\Local\\Temp\\claude\\C--Users-bassi--claude\\68fc7732-29c7-49d4-a6d1-72bbe0802a33\\scratchpad\\serveur_local.js",
+        "C:\\Users\\bassi\\idiama-agro-app\\build\\web",
+        "8088"
+      ],
+      "port": 8088
+    }
+  ]
+}

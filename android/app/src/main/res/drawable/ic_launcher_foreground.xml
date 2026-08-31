@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- L'oeuf d'IDIAMA, posé sur sa feuille : le dessin de l'icône. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- L'oeuf -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,30 C63.5,30 71,43 71,55.5 C71,67.5 63.5,75 54,75 C44.5,75 37,67.5 37,55.5 C37,43 44.5,30 54,30 Z" />
+
+    <!-- Le reflet, pour que l'oeuf ne soit pas plat -->
+    <path
+        android:fillColor="#EFF5EC"
+        android:pathData="M54,30 C50,34 46,42 46,52 C46,63 50,71 54,75 C44.5,75 37,67.5 37,55.5 C37,43 44.5,30 54,30 Z" />
+
+    <!-- La feuille -->
+    <path
+        android:fillColor="#F9A825"
+        android:pathData="M69,28 C77,28 82,33 82,41 C74,41 69,36 69,28 Z" />
+    <path
+        android:fillColor="#FDD835"
+        android:pathData="M63,42 C63,34 68,29 76,29 C76,37 71,42 63,42 Z" />
+</vector>
