@@ -4,7 +4,7 @@
 -- Le fichier peut être relancé autant de fois qu'on veut : il ne casse rien.
 -- =====================================================================
 
-create extension if not exists pgcrypto;
+create extension if not exists pgcrypto with schema extensions;
 
 -- =====================================================================
 -- 1. TABLES

@@ -15,13 +15,13 @@
 --    fabriquera un nouveau et remplacera l'ancien.
 -- =====================================================================
 
-create extension if not exists pgcrypto;
+create extension if not exists pgcrypto with schema extensions;
 
 create or replace function public.idiama_creer_admin()
 returns table (element text, valeur text)
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   uid    uuid;
@@ -50,7 +50,7 @@ begin
       phone_change, phone_change_token, reauthentication_token
     ) values (
       '00000000-0000-0000-0000-000000000000', uid, 'authenticated', 'authenticated',
-      mail, crypt(motdep, gen_salt('bf')),
+      mail, extensions.crypt(motdep, extensions.gen_salt('bf')),
       now(), now(), now(),
       '{"provider":"email","providers":["email"]}'::jsonb, '{}'::jsonb,
       '', '', '', '', '', '', '', ''
@@ -66,7 +66,7 @@ begin
     );
   else
     update auth.users
-       set encrypted_password = crypt(motdep, gen_salt('bf')),
+       set encrypted_password = extensions.crypt(motdep, extensions.gen_salt('bf')),
            email_confirmed_at = coalesce(email_confirmed_at, now()),
            confirmation_token = coalesce(confirmation_token, ''),
            recovery_token     = coalesce(recovery_token, ''),
