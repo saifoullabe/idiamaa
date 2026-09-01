@@ -8,6 +8,7 @@ import '../data/api.dart';
 import '../data/etat.dart';
 import '../models/modeles.dart';
 import '../widgets/communs.dart';
+import '../widgets/photos.dart';
 import 'formulaires.dart';
 
 /// Ce que les fermiers remontent au gérant : maladie, casse, urgence.
@@ -140,6 +141,10 @@ class _EcranSignalementsState extends State<EcranSignalements> {
                   child: Text(s.description,
                       style: Theme.of(context).textTheme.bodyMedium),
                 ),
+              ],
+              if (s.photos.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                GaleriePhotos(s.photos),
               ],
               if (s.reponse.isNotEmpty) ...[
                 const SizedBox(height: 10),

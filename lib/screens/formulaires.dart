@@ -11,6 +11,7 @@ import '../data/etat.dart';
 import '../models/modeles.dart';
 import '../widgets/communs.dart';
 import '../widgets/formulaire.dart';
+import '../widgets/photos.dart';
 
 /// Vérifie qu'on a le droit de saisir avant d'ouvrir un formulaire.
 bool _autorise(BuildContext context, Etat etat) {
@@ -827,6 +828,7 @@ Future<void> formulaireSignalement(BuildContext context) async {
 
   final titre = TextEditingController();
   final description = TextEditingController();
+  final images = <FichierChoisi>[];
   var priorite = 'normal';
   String? batimentId;
 
@@ -875,22 +877,39 @@ Future<void> formulaireSignalement(BuildContext context) async {
           indice: 'Décrivez le problème ou la chose à faire…',
           lignes: 5,
           obligatoire: true),
+      ChoixPhotos(
+        photos: images,
+        auChangement: rafraichir,
+        titre: 'Photos du problème',
+      ),
+      const SizedBox(height: 6),
+      const Bandeau(
+        titre: 'Une photo vaut mieux qu’un long texte',
+        texte:
+            'Le gérant et l’administrateur verront exactement ce que vous voyez.',
+        couleur: Palette.bleu,
+        icone: Icons.photo_camera_outlined,
+      ),
     ],
     enregistrer: () async {
       if (titre.text.trim().isEmpty) return 'Donnez un titre au signalement.';
       if (description.text.trim().isEmpty) {
         return 'Décrivez ce qui se passe.';
       }
-      return etat.agir(() => Api.creerSignalement({
-            'ferme_id': etat.maFermeId,
-            'auteur_id': etat.moi!.id,
-            'batiment_id': batimentId,
-            'titre': titre.text.trim(),
-            'priorite': priorite,
-            'description': description.text.trim(),
-            'date': iso(aujourdhui()),
-            'statut': 'ouvert',
-          }));
+      return etat.agir(() async {
+        final liens = await Api.envoyerFichiers(images, 'signalements');
+        await Api.creerSignalement({
+          'ferme_id': etat.maFermeId,
+          'auteur_id': etat.moi!.id,
+          'batiment_id': batimentId,
+          'titre': titre.text.trim(),
+          'priorite': priorite,
+          'description': description.text.trim(),
+          'date': iso(aujourdhui()),
+          'statut': 'ouvert',
+          'photos': liens,
+        });
+      });
     },
   );
   if (ok && context.mounted) message(context, 'Signalement envoyé au gérant');
@@ -907,6 +926,7 @@ Future<void> formulaireRapport(BuildContext context) async {
       TextEditingController(text: 'Rapport du ${jour(aujourdhui())}');
   final activites = TextEditingController();
   final observations = TextEditingController();
+  final images = <FichierChoisi>[];
   var date = aujourdhui();
 
   final ok = await ouvrirFormulaire(
@@ -936,20 +956,94 @@ Future<void> formulaireRapport(BuildContext context) async {
           libelle: 'Observations',
           indice: 'Remarques, incidents…',
           lignes: 4),
+      ChoixPhotos(
+        photos: images,
+        auChangement: rafraichir,
+        titre: 'Photos de la journée',
+      ),
     ],
     enregistrer: () async {
       if (titre.text.trim().isEmpty) return 'Donnez un titre au rapport.';
-      return etat.agir(() => Api.creerRapport({
-            'ferme_id': etat.maFermeId,
-            'auteur_id': etat.moi!.id,
-            'titre': titre.text.trim(),
-            'activites': activites.text.trim(),
-            'observations': observations.text.trim(),
-            'date': iso(date),
-          }));
+      return etat.agir(() async {
+        final liens = await Api.envoyerFichiers(images, 'rapports');
+        await Api.creerRapport({
+          'ferme_id': etat.maFermeId,
+          'auteur_id': etat.moi!.id,
+          'titre': titre.text.trim(),
+          'activites': activites.text.trim(),
+          'observations': observations.text.trim(),
+          'date': iso(date),
+          'photos': liens,
+        });
+      });
     },
   );
   if (ok && context.mounted) message(context, 'Rapport envoyé');
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// PHOTOS ENVOYÉES SEULES
+// ══════════════════════════════════════════════════════════════════════
+Future<void> formulairePhoto(BuildContext context) async {
+  final etat = context.read<Etat>();
+  if (!_autorise(context, etat)) return;
+
+  final note = TextEditingController();
+  final images = <FichierChoisi>[];
+  String? batimentId;
+
+  final ok = await ouvrirFormulaire(
+    context,
+    titre: 'Envoyer des photos',
+    emoji: '📷',
+    couleur: Palette.bleu,
+    libelleBouton: 'Envoyer',
+    champs: (c, rafraichir) => [
+      ChoixPhotos(
+        photos: images,
+        auChangement: rafraichir,
+        titre: 'Photos à envoyer',
+        maximum: 10,
+      ),
+      const SizedBox(height: 16),
+      ChampTexte(note,
+          libelle: 'Ce qu’on voit sur la photo',
+          indice: 'ex : toiture du bâtiment D après la pluie',
+          lignes: 3),
+      ChampListe<String>(
+        valeur: batimentId,
+        libelle: 'Bâtiment concerné',
+        icone: Icons.warehouse_outlined,
+        options: [
+          const DropdownMenuItem(value: null, child: Text('— Aucun —')),
+          for (final b in etat.batimentsDe(etat.maFermeId))
+            DropdownMenuItem(value: b.id, child: Text(b.nom)),
+        ],
+        auChangement: (v) {
+          batimentId = v;
+          rafraichir();
+        },
+      ),
+    ],
+    enregistrer: () async {
+      if (images.isEmpty) return 'Choisissez au moins une photo.';
+      return etat.agir(() async {
+        final liens = await Api.envoyerFichiers(images, 'photos');
+        for (final lien in liens) {
+          await Api.creerPhoto({
+            'ferme_id': etat.maFermeId,
+            'auteur_id': etat.moi!.id,
+            'role_auteur': etat.role,
+            'url': lien,
+            'note': note.text.trim(),
+            'batiment_id': batimentId,
+            'date': iso(aujourdhui()),
+          });
+        }
+      });
+    },
+  );
+  if (ok && context.mounted) message(context, 'Photos envoyées');
 }
 
 // ══════════════════════════════════════════════════════════════════════

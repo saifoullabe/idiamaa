@@ -6,6 +6,13 @@ double _dbl(dynamic v) =>
 String _txt(dynamic v) => v?.toString() ?? '';
 DateTime? _date(dynamic v) => v == null ? null : DateTime.tryParse('$v');
 
+/// Les adresses des fichiers rangés dans Storage. Une colonne absente
+/// vaut liste vide — jamais null, pour qu'aucun écran n'ait à s'en méfier.
+List<String> _liens(dynamic v) => ((v as List?) ?? const [])
+    .map((e) => e.toString())
+    .where((e) => e.isNotEmpty)
+    .toList();
+
 class Ferme {
   final String id;
   final String nom;
@@ -348,6 +355,7 @@ class Signalement {
   final DateTime? date;
   final String statut;
   final String reponse;
+  final List<String> photos;
 
   Signalement.depuis(Map<String, dynamic> m)
       : id = _txt(m['id']),
@@ -359,7 +367,8 @@ class Signalement {
         description = _txt(m['description']),
         date = _date(m['date']),
         statut = _txt(m['statut']),
-        reponse = _txt(m['reponse']);
+        reponse = _txt(m['reponse']),
+        photos = _liens(m['photos']);
 
   bool get ouvert => statut == 'ouvert';
 }
@@ -372,6 +381,7 @@ class Rapport {
   final String activites;
   final String observations;
   final DateTime? date;
+  final List<String> photos;
 
   Rapport.depuis(Map<String, dynamic> m)
       : id = _txt(m['id']),
@@ -380,5 +390,31 @@ class Rapport {
         titre = _txt(m['titre']),
         activites = _txt(m['activites']),
         observations = _txt(m['observations']),
-        date = _date(m['date']);
+        date = _date(m['date']),
+        photos = _liens(m['photos']);
+}
+
+/// Une photo envoyée seule, depuis l'espace « Photos ».
+/// L'image vit dans Supabase Storage ; ici on ne garde que son adresse.
+class Photo {
+  final String id;
+  final String fermeId;
+  final String auteurId;
+  final String roleAuteur;
+  final String url;
+  final String note;
+  final String? batimentId;
+  final DateTime? date;
+  final DateTime? creeLe;
+
+  Photo.depuis(Map<String, dynamic> m)
+      : id = _txt(m['id']),
+        fermeId = _txt(m['ferme_id']),
+        auteurId = _txt(m['auteur_id']),
+        roleAuteur = _txt(m['role_auteur']),
+        url = _txt(m['url']),
+        note = _txt(m['note']),
+        batimentId = m['batiment_id'] as String?,
+        date = _date(m['date']),
+        creeLe = _date(m['cree_le']);
 }

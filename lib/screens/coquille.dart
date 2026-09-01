@@ -6,10 +6,13 @@ import '../core/theme.dart';
 import '../data/etat.dart';
 import '../main.dart';
 import '../widgets/communs.dart';
+import 'alertes.dart';
+import 'analyse.dart';
 import 'depots.dart';
 import 'depenses.dart';
 import 'fermes.dart';
 import 'mon_compte.dart';
+import 'photos.dart';
 import 'pointage.dart';
 import 'presences.dart';
 import 'productions.dart';
@@ -30,9 +33,10 @@ class Onglet {
   final IconData iconePleine;
   final Widget page;
   final bool badge;
+  final bool badgeAlerte;
 
   const Onglet(this.titre, this.icone, this.iconePleine, this.page,
-      {this.badge = false});
+      {this.badge = false, this.badgeAlerte = false});
 }
 
 /// L'ossature de l'application : la barre du haut, les pages, la barre du bas.
@@ -50,6 +54,9 @@ class _CoquilleState extends State<Coquille> {
         Role.admin => const [
             Onglet('Accueil', Icons.dashboard_outlined,
                 Icons.dashboard_rounded, TableauBord()),
+            Onglet('Alertes', Icons.notifications_none_rounded,
+                Icons.notifications_active_rounded, EcranAlertes(),
+                badgeAlerte: true),
             Onglet('Validation', Icons.fact_check_outlined,
                 Icons.fact_check_rounded, EcranValidation(),
                 badge: true),
@@ -67,10 +74,17 @@ class _CoquilleState extends State<Coquille> {
                 Icons.account_balance_rounded, EcranDepots()),
             Onglet('Rapport global', Icons.insert_chart_outlined,
                 Icons.insert_chart_rounded, EcranRapportGlobal()),
+            Onglet('Analyse', Icons.query_stats_outlined,
+                Icons.query_stats_rounded, EcranAnalyse()),
+            Onglet('Photos', Icons.photo_library_outlined,
+                Icons.photo_library_rounded, EcranPhotos()),
           ],
         Role.gerant => const [
             Onglet('Accueil', Icons.dashboard_outlined,
                 Icons.dashboard_rounded, TableauBord()),
+            Onglet('Alertes', Icons.notifications_none_rounded,
+                Icons.notifications_active_rounded, EcranAlertes(),
+                badgeAlerte: true),
             Onglet('Validation', Icons.fact_check_outlined,
                 Icons.fact_check_rounded, EcranValidation(),
                 badge: true),
@@ -90,6 +104,10 @@ class _CoquilleState extends State<Coquille> {
                 Icons.description_rounded, EcranRapports()),
             Onglet('Présences', Icons.access_time_outlined,
                 Icons.access_time_filled_rounded, EcranPresences()),
+            Onglet('Analyse', Icons.query_stats_outlined,
+                Icons.query_stats_rounded, EcranAnalyse()),
+            Onglet('Photos', Icons.photo_library_outlined,
+                Icons.photo_library_rounded, EcranPhotos()),
           ],
         _ => const [
             Onglet('Accueil', Icons.dashboard_outlined,
@@ -110,6 +128,8 @@ class _CoquilleState extends State<Coquille> {
                 Icons.description_rounded, EcranRapports()),
             Onglet('Dépôts', Icons.account_balance_outlined,
                 Icons.account_balance_rounded, EcranDepots()),
+            Onglet('Photos', Icons.photo_library_outlined,
+                Icons.photo_library_rounded, EcranPhotos()),
           ],
       };
 
@@ -241,15 +261,26 @@ class _CoquilleState extends State<Coquille> {
   }
 
   bool _resteUnBadge(List<Onglet> onglets, int visibles, Etat etat) {
-    if (etat.aValider == 0) return false;
-    final i = onglets.indexWhere((o) => o.badge);
-    return i >= visibles;
+    for (var i = visibles; i < onglets.length; i++) {
+      if (onglets[i].badge && etat.aValider > 0) return true;
+      if (onglets[i].badgeAlerte && EcranAlertes.compte(etat) > 0) return true;
+    }
+    return false;
   }
 
   Widget _icone(Onglet o, Etat etat, {required bool plein}) {
     final ico = Icon(plein ? o.iconePleine : o.icone);
-    if (!o.badge || etat.aValider == 0) return ico;
-    return Badge(label: Text('${etat.aValider}'), child: ico);
+    if (o.badge && etat.aValider > 0) {
+      return Badge(label: Text('${etat.aValider}'), child: ico);
+    }
+    if (o.badgeAlerte) {
+      final n = EcranAlertes.compte(etat);
+      if (n > 0) {
+        return Badge(
+            backgroundColor: Palette.rouge, label: Text('$n'), child: ico);
+      }
+    }
+    return ico;
   }
 
   Widget _bandeauPleineLargeur(String texte, Color couleur, IconData icone) =>

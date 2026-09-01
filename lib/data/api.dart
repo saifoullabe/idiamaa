@@ -409,6 +409,20 @@ class Api {
   static Future<void> supprimerRapport(String id) =>
       _db.from('rapports').delete().eq('id', id);
 
+  // ── PHOTOS ─────────────────────────────────────────────────────────
+  static Future<List<Photo>> photos({String? fermeId}) async {
+    var q = _db.from('photos').select();
+    if (fermeId != null) q = q.eq('ferme_id', fermeId);
+    final r = await q.order('cree_le', ascending: false).limit(300);
+    return r.map<Photo>((m) => Photo.depuis(m)).toList();
+  }
+
+  static Future<void> creerPhoto(Map<String, dynamic> champs) =>
+      _db.from('photos').insert(champs);
+
+  static Future<void> supprimerPhoto(String id) =>
+      _db.from('photos').delete().eq('id', id);
+
   // ── ARTICLES PERSONNALISÉS ─────────────────────────────────────────
   static Future<Map<String, List<String>>> articlesPerso() async {
     final r = await _db.from('articles_perso').select();
@@ -440,5 +454,15 @@ class Api {
           fileOptions: FileOptions(contentType: fichier.typeMime),
         );
     return _db.storage.from('documents').getPublicUrl(chemin);
+  }
+
+  /// Envoie plusieurs images d'un coup et rend leurs adresses.
+  static Future<List<String>> envoyerFichiers(
+      List<FichierChoisi> fichiers, String dossier) async {
+    final liens = <String>[];
+    for (final f in fichiers) {
+      liens.add(await envoyerFichier(f, dossier));
+    }
+    return liens;
   }
 }

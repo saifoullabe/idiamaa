@@ -26,6 +26,7 @@ class Etat extends ChangeNotifier {
   List<Stock> stocks = [];
   List<Signalement> signalements = [];
   List<Rapport> rapports = [];
+  List<Photo> photos = [];
   List<Pointage> pointages = [];
   List<Pointage> pointagesEnCours = [];
   Pointage? monPointage;
@@ -125,6 +126,7 @@ class Etat extends ChangeNotifier {
     stocks = [];
     signalements = [];
     rapports = [];
+    photos = [];
     pointages = [];
     pointagesEnCours = [];
     monPointage = null;
@@ -154,6 +156,7 @@ class Etat extends ChangeNotifier {
         Api.pointages(fermeId: portee, profilId: null),
         Api.pointagesEnCours(),
         Api.pointageEnCours(moi!.id),
+        Api.photos(fermeId: portee),
         Api.articlesPerso(),
         Api.monProfil(),
       ]);
@@ -170,8 +173,9 @@ class Etat extends ChangeNotifier {
       pointages = resultats[10] as List<Pointage>;
       pointagesEnCours = resultats[11] as List<Pointage>;
       monPointage = resultats[12] as Pointage?;
-      articlesPerso = resultats[13] as Map<String, List<String>>;
-      final profilFrais = resultats[14] as Profil?;
+      photos = resultats[13] as List<Photo>;
+      articlesPerso = resultats[14] as Map<String, List<String>>;
+      final profilFrais = resultats[15] as Profil?;
       if (profilFrais != null) moi = profilFrais;
     } catch (e) {
       erreur = _lisible(e);

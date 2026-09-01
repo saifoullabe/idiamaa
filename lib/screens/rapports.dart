@@ -7,6 +7,7 @@ import '../data/api.dart';
 import '../data/etat.dart';
 import '../models/modeles.dart';
 import '../widgets/communs.dart';
+import '../widgets/photos.dart';
 import 'formulaires.dart';
 
 /// Les rapports d'activité que les fermiers envoient à leur gérant.
@@ -113,6 +114,10 @@ class EcranRapports extends StatelessWidget {
                   child: Text(r.observations,
                       style: Theme.of(context).textTheme.bodyMedium),
                 ),
+              ],
+              if (r.photos.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                GaleriePhotos(r.photos),
               ],
             ]),
       ),
