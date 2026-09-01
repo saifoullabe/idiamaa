@@ -75,6 +75,8 @@ class _EcranDepotsState extends State<EcranDepots> {
                   icone: Icons.hourglass_top_rounded),
             ], largeurMin: 150),
             const SizedBox(height: 18),
+            _cumuls(context, etat),
+            const SizedBox(height: 18),
             if (lignes.isEmpty)
               Bloc(
                   enfant: Vide('Aucun dépôt enregistré',
@@ -95,6 +97,210 @@ class _EcranDepotsState extends State<EcranDepots> {
       ),
     );
   }
+
+  // ══════════════════════════════════════════════════════════════════
+  // LES CUMULS — jour, semaine, mois, total, ferme par ferme
+  // ══════════════════════════════════════════════════════════════════
+  /// Ne comptent que les dépôts VALIDÉS : un dépôt en attente n'est pas
+  /// encore de l'argent reçu, l'inclure gonflerait les chiffres à tort.
+  int _somme(Etat etat, {String? fermeId, DateTime? depuis}) => etat.depots
+      .where((d) =>
+          d.statut == Statut.valide &&
+          (fermeId == null || d.fermeId == fermeId) &&
+          (depuis == null ||
+              (d.date != null && !d.date!.isBefore(depuis))))
+      .fold<int>(0, (s, d) => s + d.montant);
+
+  Widget _cumuls(BuildContext context, Etat etat) {
+    final j = aujourdhui();
+    final semaine = j.subtract(const Duration(days: 6)); // aujourd'hui inclus
+    final mois = DateTime(j.year, j.month, 1);
+
+    final fermes = etat.estAdmin
+        ? etat.fermes
+        : etat.fermes.where((f) => f.id == etat.maFermeId).toList();
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const TitreSection('Cumuls des dépôts',
+          emoji: '🧮', marge: EdgeInsets.only(left: 4, bottom: 12)),
+      Bloc(
+        enfant: Column(children: [
+          Row(children: [
+            _periode(context, 'Aujourd’hui', _somme(etat, depuis: j),
+                Palette.vertMoyen),
+            _periode(context, '7 derniers jours',
+                _somme(etat, depuis: semaine), Palette.bleu),
+          ]),
+          const SizedBox(height: 10),
+          Row(children: [
+            _periode(context, moisAnnee(j), _somme(etat, depuis: mois),
+                Palette.or),
+            _periode(context, 'Depuis le début', _somme(etat), Palette.vert),
+          ]),
+        ]),
+      ),
+      const SizedBox(height: 12),
+
+      // ── Le détail ferme par ferme ──
+      Bloc(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+        enfant: Column(children: [
+          Row(children: [
+            Expanded(
+              flex: 3,
+              child: Text('FERME',
+                  style: Theme.of(context).textTheme.labelSmall),
+            ),
+            Expanded(
+              flex: 2,
+              child: Text('JOUR',
+                  textAlign: TextAlign.right,
+                  style: Theme.of(context).textTheme.labelSmall),
+            ),
+            Expanded(
+              flex: 2,
+              child: Text('SEMAINE',
+                  textAlign: TextAlign.right,
+                  style: Theme.of(context).textTheme.labelSmall),
+            ),
+            Expanded(
+              flex: 2,
+              child: Text('MOIS',
+                  textAlign: TextAlign.right,
+                  style: Theme.of(context).textTheme.labelSmall),
+            ),
+            Expanded(
+              flex: 2,
+              child: Text('TOTAL',
+                  textAlign: TextAlign.right,
+                  style: Theme.of(context).textTheme.labelSmall),
+            ),
+          ]),
+          const Divider(height: 16),
+          if (fermes.isEmpty)
+            const Vide('Aucune ferme', icone: Icons.holiday_village_outlined)
+          else
+            for (final f in fermes) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 7),
+                child: Row(children: [
+                  Expanded(
+                    flex: 3,
+                    child: Text(f.nom,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.w600)),
+                  ),
+                  _cellule(context, _somme(etat, fermeId: f.id, depuis: j)),
+                  _cellule(
+                      context, _somme(etat, fermeId: f.id, depuis: semaine)),
+                  _cellule(
+                      context, _somme(etat, fermeId: f.id, depuis: mois)),
+                  _cellule(context, _somme(etat, fermeId: f.id),
+                      gras: true),
+                ]),
+              ),
+              const Divider(height: 1),
+            ],
+          // ── Le total général ──
+          Container(
+            margin: const EdgeInsets.only(top: 10),
+            padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 10),
+            decoration: BoxDecoration(
+              color: Palette.vert.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(children: [
+              Expanded(
+                flex: 3,
+                child: Text(
+                    etat.estAdmin ? 'TOTAL GÉNÉRAL' : 'TOTAL MA FERME',
+                    style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.4,
+                        color: Palette.vert)),
+              ),
+              _cellule(context, _somme(etat, depuis: j),
+                  couleur: Palette.vert, gras: true),
+              _cellule(context, _somme(etat, depuis: semaine),
+                  couleur: Palette.vert, gras: true),
+              _cellule(context, _somme(etat, depuis: mois),
+                  couleur: Palette.vert, gras: true),
+              _cellule(context, _somme(etat),
+                  couleur: Palette.vert, gras: true),
+            ]),
+          ),
+        ]),
+      ),
+      const SizedBox(height: 10),
+      Bloc(
+        padding: const EdgeInsets.all(13),
+        enfant: Row(children: [
+          Icon(Icons.info_outline_rounded,
+              size: 17, color: Theme.of(context).hintColor),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Seuls les dépôts validés sont comptés. Un dépôt en attente '
+              'n’est pas encore de l’argent reçu : l’inclure gonflerait vos '
+              'chiffres à tort.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+        ]),
+      ),
+    ]);
+  }
+
+  Widget _periode(
+          BuildContext context, String libelle, int montant, Color c) =>
+      Expanded(
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 10),
+          decoration: BoxDecoration(
+            color: c.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(libelle.toUpperCase(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall),
+              const SizedBox(height: 5),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(gnf(montant),
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: c)),
+              ),
+            ],
+          ),
+        ),
+      );
+
+  Widget _cellule(BuildContext context, int montant,
+          {Color? couleur, bool gras = false}) =>
+      Expanded(
+        flex: 2,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerRight,
+          child: Text(montant == 0 ? '—' : gnfCourt(montant),
+              style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: gras ? FontWeight.w800 : FontWeight.w600,
+                  color: couleur ??
+                      (montant == 0 ? Theme.of(context).hintColor : null))),
+        ),
+      );
 
   Widget _filtres(BuildContext context, Etat etat) {
     final maintenant = DateTime.now();

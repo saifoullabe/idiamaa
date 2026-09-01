@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../core/constantes.dart';
 import '../core/elevage.dart';
 import '../core/format.dart';
+import '../core/localisation.dart';
 import '../core/theme.dart';
 import '../data/api.dart';
 import '../data/etat.dart';
@@ -404,7 +405,12 @@ Future<void> formulaireFerme(BuildContext context, {Ferme? ferme}) async {
   final adresse = TextEditingController(text: ferme?.adresse ?? '');
   final ville = TextEditingController(text: ferme?.ville ?? '');
   final notes = TextEditingController(text: ferme?.notes ?? '');
+  final rayon =
+      TextEditingController(text: '${ferme?.rayonMetres ?? 300}');
   var statut = ferme?.statut ?? 'Actif';
+  double? latitude = ferme?.latitude;
+  double? longitude = ferme?.longitude;
+  var recherche = false;
 
   final ok = await ouvrirFormulaire(
     context,
@@ -441,6 +447,85 @@ Future<void> formulaireFerme(BuildContext context, {Ferme? ferme}) async {
           },
         ),
       ChampTexte(notes, libelle: 'Notes', lignes: 3),
+      const SousTitreFormulaire('Position de la ferme'),
+      Bandeau(
+        titre: latitude == null
+            ? 'Position non enregistrée'
+            : 'Position enregistrée',
+        texte: latitude == null
+            ? 'Tant qu’elle est vide, les fermiers peuvent pointer de '
+                'n’importe où. Une fois posée, ils devront être sur place.'
+            : '${latitude!.toStringAsFixed(5)}, ${longitude!.toStringAsFixed(5)}',
+        couleur: latitude == null ? Palette.orFonce : Palette.vert,
+        icone: latitude == null
+            ? Icons.location_off_outlined
+            : Icons.location_on_rounded,
+      ),
+      const SizedBox(height: 12),
+      Row(children: [
+        Expanded(
+          child: FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: Palette.bleu),
+            onPressed: recherche
+                ? null
+                : () async {
+                    recherche = true;
+                    rafraichir();
+                    final p = await Localisation.position();
+                    recherche = false;
+                    if (p.utilisable) {
+                      latitude = p.latitude;
+                      longitude = p.longitude;
+                      if (c.mounted) {
+                        message(
+                            c,
+                            'Position prise'
+                            '${p.precisionMetres == null ? '' : ' (précision ${p.precisionMetres!.round()} m)'}');
+                      }
+                    } else if (c.mounted) {
+                      message(c, p.explication, erreur: true);
+                    }
+                    rafraichir();
+                  },
+            icon: recherche
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white))
+                : const Icon(Icons.my_location_rounded, size: 19),
+            label: Text(recherche ? 'Recherche…' : 'Je suis à la ferme'),
+          ),
+        ),
+        if (latitude != null) ...[
+          const SizedBox(width: 10),
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(foregroundColor: Palette.rouge),
+            onPressed: () {
+              latitude = null;
+              longitude = null;
+              rafraichir();
+            },
+            icon: const Icon(Icons.delete_outline_rounded, size: 18),
+            label: const Text('Retirer'),
+          ),
+        ],
+      ]),
+      const SizedBox(height: 14),
+      ChampNombre(rayon,
+          libelle: 'Rayon toléré autour de la ferme',
+          suffixe: 'm',
+          icone: Icons.radar_rounded,
+          auChangement: rafraichir),
+      Padding(
+        padding: const EdgeInsets.only(left: 4, bottom: 12),
+        child: Text(
+          'Le GPS d’un téléphone se trompe de 10 à 50 mètres, davantage sous '
+          'une tôle. En dessous de 150 m, vous bloquerez des fermiers qui sont '
+          'pourtant sur place. 300 m est un bon réglage pour une exploitation.',
+          style: Theme.of(c).textTheme.bodySmall,
+        ),
+      ),
       if (statut == 'Suspendue')
         const Bandeau(
           titre: 'Ferme suspendue',
@@ -453,20 +538,44 @@ Future<void> formulaireFerme(BuildContext context, {Ferme? ferme}) async {
     enregistrer: () async {
       if (nom.text.trim().isEmpty) return 'Le nom de la ferme est obligatoire.';
       if (ville.text.trim().isEmpty) return 'La ville est obligatoire.';
-      final champs = {
+      final rayonM = int.tryParse(rayon.text) ?? 300;
+      if (latitude != null && rayonM < 50) {
+        return 'Un rayon de moins de 50 m est inutilisable : le GPS seul se '
+            'trompe de plus que ça.';
+      }
+      final champs = <String, dynamic>{
         'nom': nom.text.trim(),
         'ville': ville.text.trim(),
         'adresse': adresse.text.trim(),
         'notes': notes.text.trim(),
         'statut': statut,
+        'latitude': latitude,
+        'longitude': longitude,
+        'rayon_metres': rayonM,
       };
-      return etat.agir(() => ferme == null
-          ? Api.creerFerme(
-              nom: champs['nom']!,
-              ville: champs['ville']!,
-              adresse: champs['adresse']!,
-              notes: champs['notes']!)
-          : Api.majFerme(ferme.id, champs));
+      return etat.agir(() async {
+        if (ferme == null) {
+          await Api.creerFerme(
+              nom: '${champs['nom']}',
+              ville: '${champs['ville']}',
+              adresse: '${champs['adresse']}',
+              notes: '${champs['notes']}');
+          // La position se pose sur la ferme qui vient d'être créée.
+          if (latitude != null) {
+            final fraiches = await Api.fermes();
+            final creee = fraiches.where((f) => f.nom == champs['nom']);
+            if (creee.isNotEmpty) {
+              await Api.majFerme(creee.last.id, {
+                'latitude': latitude,
+                'longitude': longitude,
+                'rayon_metres': rayonM,
+              });
+            }
+          }
+        } else {
+          await Api.majFerme(ferme.id, champs);
+        }
+      });
     },
   );
   if (ok && context.mounted) message(context, 'Ferme enregistrée');

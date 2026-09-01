@@ -6,8 +6,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/config.dart';
 import '../core/constantes.dart';
 import '../core/format.dart';
+import '../core/localisation.dart';
 import '../models/modeles.dart';
 import 'api.dart';
+import 'presence.dart' as suivi;
 
 /// L'état de l'application : qui est connecté, et tout ce qu'il a le
 /// droit de voir. Une seule source, rafraîchie d'un coup.
@@ -27,6 +29,8 @@ class Etat extends ChangeNotifier {
   List<Signalement> signalements = [];
   List<Rapport> rapports = [];
   List<Photo> photos = [];
+  List<Client> clients = [];
+  List<Vente> ventes = [];
   List<Mortalite> mortalites = [];
   List<Vaccination> vaccinations = [];
   List<Pointage> pointages = [];
@@ -129,6 +133,8 @@ class Etat extends ChangeNotifier {
     signalements = [];
     rapports = [];
     photos = [];
+    clients = [];
+    ventes = [];
     mortalites = [];
     vaccinations = [];
     pointages = [];
@@ -161,6 +167,8 @@ class Etat extends ChangeNotifier {
         Api.pointagesEnCours(),
         Api.pointageEnCours(moi!.id),
         Api.photos(fermeId: portee),
+        Api.clients(fermeId: portee),
+        Api.ventes(fermeId: portee),
         Api.mortalites(fermeId: portee),
         Api.vaccinations(fermeId: portee),
         Api.articlesPerso(),
@@ -180,10 +188,12 @@ class Etat extends ChangeNotifier {
       pointagesEnCours = resultats[11] as List<Pointage>;
       monPointage = resultats[12] as Pointage?;
       photos = resultats[13] as List<Photo>;
-      mortalites = resultats[14] as List<Mortalite>;
-      vaccinations = resultats[15] as List<Vaccination>;
-      articlesPerso = resultats[16] as Map<String, List<String>>;
-      final profilFrais = resultats[17] as Profil?;
+      clients = resultats[14] as List<Client>;
+      ventes = resultats[15] as List<Vente>;
+      mortalites = resultats[16] as List<Mortalite>;
+      vaccinations = resultats[17] as List<Vaccination>;
+      articlesPerso = resultats[18] as Map<String, List<String>>;
+      final profilFrais = resultats[19] as Profil?;
       if (profilFrais != null) moi = profilFrais;
     } catch (e) {
       erreur = _lisible(e);
@@ -217,16 +227,86 @@ class Etat extends ChangeNotifier {
   }
 
   // ── Pointage ───────────────────────────────────────────────────────
+  /// Le fermier ne peut passer en ligne que depuis la ferme. La position
+  /// est prise ici, mais c'est la base qui tranche.
   Future<String?> basculerPointage() async {
     if (moi == null) return 'Non connecté';
     if (moi!.suspendu) return 'Compte suspendu — action impossible.';
-    return agir(() async {
-      if (monPointage != null) {
-        await Api.pointerSortie(monPointage!);
+
+    final sortie = monPointage != null;
+    Position2? pos;
+
+    // On demande la position quand la ferme en a une d'enregistrée.
+    final f = maFerme;
+    if (f?.latitude != null && f?.longitude != null) {
+      pos = await Localisation.position();
+      // À l'arrivée, pas de position = pas de pointage pour un fermier.
+      if (!sortie && estFermier && !pos.utilisable) {
+        return pos.explication;
+      }
+    }
+
+    final erreur = await agir(() async {
+      if (sortie) {
+        await Api.pointerSortie(
+            latitude: pos?.latitude, longitude: pos?.longitude);
       } else {
-        await Api.pointerArrivee(moi!.id, moi!.fermeId);
+        await Api.pointerArrivee(
+            latitude: pos?.latitude, longitude: pos?.longitude);
       }
     });
+    if (erreur != null) return erreur;
+
+    // Le suivi continu ne tourne que pendant le pointage d'un fermier
+    // sur une ferme dont la position est enregistrée.
+    if (sortie) {
+      await suivi.Presence.arreter();
+    } else if (estFermier && f?.latitude != null) {
+      await suivi.Presence.demarrer(surSortie: (motif) async {
+        await rafraichir();
+        messageSortieAuto = motif;
+        notifyListeners();
+      });
+    }
+    return null;
+  }
+
+  /// Ce que la base a dit quand elle a mis quelqu'un hors ligne tout seul.
+  /// L'écran le lit, l'affiche, puis le remet à null.
+  String? messageSortieAuto;
+
+  /// Ferme les pointages dont le téléphone ne donne plus de nouvelles.
+  /// Appelé au chargement par l'admin et le gérant : pas besoin de
+  /// planificateur, ceux qui regardent font le ménage.
+  Future<void> fermerPointagesMuets() async {
+    if (!estAdmin && !estGerant) return;
+    try {
+      await Api.fermerPointagesMuets();
+    } catch (_) {}
+  }
+
+  /// Vérifie que la personne est toujours sur place. Si elle a quitté la
+  /// ferme, on la met hors ligne toute seule.
+  /// Rend la distance en mètres, ou null si le contrôle ne s'applique pas.
+  Future<double?> verifierPresence() async {
+    if (moi == null || monPointage == null || !estFermier) return null;
+    final f = maFerme;
+    if (f?.latitude == null || f?.longitude == null) return null;
+
+    final pos = await Localisation.position();
+    if (!pos.utilisable) return null;
+
+    final d = Localisation.distance(
+        f!.latitude!, f.longitude!, pos.latitude!, pos.longitude!);
+
+    if (d > f.rayonMetres) {
+      await agir(() => Api.pointerSortie(
+            latitude: pos.latitude,
+            longitude: pos.longitude,
+            auto: true,
+          ));
+    }
+    return d;
   }
 
   // ── Aides de lecture ───────────────────────────────────────────────

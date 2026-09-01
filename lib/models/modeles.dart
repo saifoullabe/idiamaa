@@ -22,6 +22,9 @@ class Ferme {
   final String? gerantId;
   final int prixAlveole;
   final String notes;
+  final double? latitude;
+  final double? longitude;
+  final int rayonMetres;
 
   Ferme.depuis(Map<String, dynamic> m)
       : id = _txt(m['id']),
@@ -31,7 +34,10 @@ class Ferme {
         statut = _txt(m['statut']),
         gerantId = m['gerant_id'] as String?,
         prixAlveole = _int(m['prix_alveole']),
-        notes = _txt(m['notes']);
+        notes = _txt(m['notes']),
+        latitude = m['latitude'] == null ? null : _dbl(m['latitude']),
+        longitude = m['longitude'] == null ? null : _dbl(m['longitude']),
+        rayonMetres = m['rayon_metres'] == null ? 300 : _int(m['rayon_metres']);
 
   bool get suspendue => statut == 'Suspendue';
   bool get active => statut == 'Actif';
@@ -463,6 +469,71 @@ class Rapport {
         observations = _txt(m['observations']),
         date = _date(m['date']),
         photos = _liens(m['photos']);
+}
+
+/// Un revendeur, un particulier, un restaurant — quelqu'un qui achète
+/// les œufs de la ferme. La fiche est tenue par le gérant.
+class Client {
+  final String id;
+  final String fermeId;
+  final String? creePar;
+  final String nom;
+  final String type;
+  final String telephone;
+  final String telephone2;
+  final String adresse;
+  final String note;
+  final bool actif;
+  final DateTime? creeLe;
+
+  Client.depuis(Map<String, dynamic> m)
+      : id = _txt(m['id']),
+        fermeId = _txt(m['ferme_id']),
+        creePar = m['cree_par'] as String?,
+        nom = _txt(m['nom']),
+        type = _txt(m['type']),
+        telephone = _txt(m['telephone']),
+        telephone2 = _txt(m['telephone2']),
+        adresse = _txt(m['adresse']),
+        note = _txt(m['note']),
+        actif = m['actif'] != false,
+        creeLe = _date(m['cree_le']);
+}
+
+/// Un achat d'un client : la date, le nombre d'alvéoles, le prix de
+/// l'alvéole, le total — et son numéro de facture.
+class Vente {
+  final String id;
+  final String clientId;
+  final String fermeId;
+  final String auteurId;
+  final String roleAuteur;
+  final String? recetteId;
+  final String reference;
+  final DateTime? date;
+  final int nbAlveoles;
+  final int prixAlveole;
+  final int montant;
+  final bool paye;
+  final String note;
+
+  Vente.depuis(Map<String, dynamic> m)
+      : id = _txt(m['id']),
+        clientId = _txt(m['client_id']),
+        fermeId = _txt(m['ferme_id']),
+        auteurId = _txt(m['auteur_id']),
+        roleAuteur = _txt(m['role_auteur']),
+        recetteId = m['recette_id'] as String?,
+        reference = _txt(m['reference']),
+        date = _date(m['date']),
+        nbAlveoles = _int(m['nb_alveoles']),
+        prixAlveole = _int(m['prix_alveole']),
+        montant = _int(m['montant']),
+        paye = m['paye'] != false,
+        note = _txt(m['note']);
+
+  /// Combien d'œufs cet achat représente.
+  int get oeufs => nbAlveoles * 30;
 }
 
 /// Une photo envoyée seule, depuis l'espace « Photos ».

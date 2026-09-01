@@ -351,21 +351,29 @@ class Api {
     return r.map<Pointage>((m) => Pointage.depuis(m)).toList();
   }
 
-  static Future<void> pointerArrivee(String profilId, String? fermeId) =>
-      _db.from('pointages').insert({
-        'profil_id': profilId,
-        'ferme_id': fermeId,
-        'debut': DateTime.now().toUtc().toIso8601String(),
-        'statut': 'en_cours',
-      });
+  /// C'est la base qui décide si le pointage est accepté : elle vérifie
+  /// la distance à la ferme. Un téléphone modifié qui appellerait l'API
+  /// directement se ferait refuser de la même façon.
+  static Future<void> pointerArrivee(
+      {double? latitude, double? longitude}) async {
+    await _db.rpc('pointer_arrivee', params: {
+      'p_latitude': latitude,
+      'p_longitude': longitude,
+    });
+  }
 
-  static Future<void> pointerSortie(Pointage p) {
-    final fin = DateTime.now();
-    return _db.from('pointages').update({
-      'fin': fin.toUtc().toIso8601String(),
-      'duree': fin.difference(p.debut.toLocal()).inSeconds,
-      'statut': 'termine',
-    }).eq('id', p.id);
+  /// Ferme les pointages dont le telephone ne donne plus signe de vie.
+  static Future<void> fermerPointagesMuets({int minutes = 30}) async {
+    await _db.rpc('fermer_pointages_silencieux', params: {'p_minutes': minutes});
+  }
+
+  static Future<void> pointerSortie(
+      {double? latitude, double? longitude, bool auto = false}) async {
+    await _db.rpc('pointer_sortie', params: {
+      'p_latitude': latitude,
+      'p_longitude': longitude,
+      'p_auto': auto,
+    });
   }
 
   // ── STOCKS ─────────────────────────────────────────────────────────
@@ -438,6 +446,59 @@ class Api {
 
   static Future<void> supprimerRapport(String id) =>
       _db.from('rapports').delete().eq('id', id);
+
+  // ── CLIENTS REVENDEURS ET VENTES ───────────────────────────────────
+  static Future<List<Client>> clients({String? fermeId}) async {
+    var q = _db.from('clients').select();
+    if (fermeId != null) q = q.eq('ferme_id', fermeId);
+    final r = await q.order('nom');
+    return r.map<Client>((m) => Client.depuis(m)).toList();
+  }
+
+  static Future<void> creerClient(Map<String, dynamic> champs) =>
+      _db.from('clients').insert(champs);
+
+  static Future<void> majClient(String id, Map<String, dynamic> champs) =>
+      _db.from('clients').update(champs).eq('id', id);
+
+  static Future<void> supprimerClient(String id) =>
+      _db.from('clients').delete().eq('id', id);
+
+  static Future<List<Vente>> ventes({String? fermeId}) async {
+    var q = _db.from('ventes').select();
+    if (fermeId != null) q = q.eq('ferme_id', fermeId);
+    final r = await q.order('date', ascending: false).limit(500);
+    return r.map<Vente>((m) => Vente.depuis(m)).toList();
+  }
+
+  /// La vente et la recette qui va avec sont créées ensemble par la base :
+  /// impossible d'avoir une facture sans l'argent dans les comptes.
+  /// Rend le numéro de facture.
+  static Future<String> enregistrerVente({
+    required String clientId,
+    required DateTime date,
+    required int nbAlveoles,
+    required int prixAlveole,
+    required bool paye,
+    String note = '',
+  }) async {
+    final r = await _db.rpc('enregistrer_vente', params: {
+      'p_client': clientId,
+      'p_date': iso(date),
+      'p_nb_alveoles': nbAlveoles,
+      'p_prix_alveole': prixAlveole,
+      'p_paye': paye,
+      'p_note': note,
+    });
+    if (r is List && r.isNotEmpty) return '${r.first['reference']}';
+    return '';
+  }
+
+  static Future<void> supprimerVente(String id) =>
+      _db.rpc('supprimer_vente', params: {'p_vente': id});
+
+  static Future<void> majVente(String id, Map<String, dynamic> champs) =>
+      _db.from('ventes').update(champs).eq('id', id);
 
   // ── SANTÉ : MORTALITÉ ET VACCINS ───────────────────────────────────
   static Future<List<Mortalite>> mortalites({String? fermeId}) async {

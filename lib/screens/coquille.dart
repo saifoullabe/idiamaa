@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -48,8 +50,51 @@ class Coquille extends StatefulWidget {
   State<Coquille> createState() => _CoquilleState();
 }
 
-class _CoquilleState extends State<Coquille> {
+class _CoquilleState extends State<Coquille> with WidgetsBindingObserver {
   int _index = 0;
+  Timer? _surveillance;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // Tant que le fermier est en ligne, on vérifie régulièrement qu'il
+    // est toujours sur la ferme. S'il en est sorti, la base le met hors
+    // ligne et il ne peut plus rien saisir.
+    _surveillance = Timer.periodic(const Duration(minutes: 3), (_) {
+      _verifier();
+    });
+  }
+
+  @override
+  void dispose() {
+    _surveillance?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState etat) {
+    // Au retour dans l'application, on revérifie tout de suite : c'est
+    // le moment où la personne a le plus de chances d'avoir bougé.
+    if (etat == AppLifecycleState.resumed) _verifier();
+  }
+
+  Future<void> _verifier() async {
+    if (!mounted) return;
+    final etat = context.read<Etat>();
+    if (!etat.connecte || !etat.estFermier || !etat.enLigne) return;
+    final avant = etat.enLigne;
+    final distance = await etat.verifierPresence();
+    if (!mounted || distance == null) return;
+    if (avant && !etat.enLigne) {
+      message(
+          context,
+          'Vous avez quitté la ferme (${distance.round()} m). '
+          'Vous avez été mis hors ligne automatiquement.',
+          erreur: true);
+    }
+  }
 
   List<Onglet> _onglets(Etat etat) => switch (etat.role) {
         Role.admin => const [
