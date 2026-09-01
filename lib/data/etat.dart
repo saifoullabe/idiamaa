@@ -27,6 +27,8 @@ class Etat extends ChangeNotifier {
   List<Signalement> signalements = [];
   List<Rapport> rapports = [];
   List<Photo> photos = [];
+  List<Mortalite> mortalites = [];
+  List<Vaccination> vaccinations = [];
   List<Pointage> pointages = [];
   List<Pointage> pointagesEnCours = [];
   Pointage? monPointage;
@@ -127,6 +129,8 @@ class Etat extends ChangeNotifier {
     signalements = [];
     rapports = [];
     photos = [];
+    mortalites = [];
+    vaccinations = [];
     pointages = [];
     pointagesEnCours = [];
     monPointage = null;
@@ -157,6 +161,8 @@ class Etat extends ChangeNotifier {
         Api.pointagesEnCours(),
         Api.pointageEnCours(moi!.id),
         Api.photos(fermeId: portee),
+        Api.mortalites(fermeId: portee),
+        Api.vaccinations(fermeId: portee),
         Api.articlesPerso(),
         Api.monProfil(),
       ]);
@@ -174,8 +180,10 @@ class Etat extends ChangeNotifier {
       pointagesEnCours = resultats[11] as List<Pointage>;
       monPointage = resultats[12] as Pointage?;
       photos = resultats[13] as List<Photo>;
-      articlesPerso = resultats[14] as Map<String, List<String>>;
-      final profilFrais = resultats[15] as Profil?;
+      mortalites = resultats[14] as List<Mortalite>;
+      vaccinations = resultats[15] as List<Vaccination>;
+      articlesPerso = resultats[16] as Map<String, List<String>>;
+      final profilFrais = resultats[17] as Profil?;
       if (profilFrais != null) moi = profilFrais;
     } catch (e) {
       erreur = _lisible(e);
@@ -241,6 +249,48 @@ class Etat extends ChangeNotifier {
 
   List<Batiment> batimentsDe(String? fermeId) =>
       batiments.where((b) => b.fermeId == fermeId).toList();
+
+  // ── Le cheptel vivant ──────────────────────────────────────────────
+  /// Toutes les poules mortes depuis la mise en place du bâtiment.
+  int mortsCumules(String batimentId) => mortalites
+      .where((m) => m.batimentId == batimentId)
+      .fold<int>(0, (s, m) => s + m.nombre);
+
+  /// L'effectif réellement présent : l'arrivage moins les morts déclarées.
+  /// C'est lui qui doit servir au taux de ponte, jamais l'effectif de départ.
+  int effectifVivant(Batiment b) {
+    final v = b.nbPoules - mortsCumules(b.id);
+    return v < 0 ? 0 : v;
+  }
+
+  /// Mortalité cumulée en % de l'effectif de départ.
+  double tauxMortalite(Batiment b) =>
+      b.nbPoules > 0 ? mortsCumules(b.id) / b.nbPoules * 100 : 0;
+
+  int mortsDuJour(String batimentId, DateTime j) => mortalites
+      .where((m) =>
+          m.batimentId == batimentId && m.date != null && iso(m.date!) == iso(j))
+      .fold<int>(0, (s, m) => s + m.nombre);
+
+  /// Les morts des sept derniers jours — le signal qui compte vraiment.
+  int mortsSemaine(String batimentId) {
+    final depuis = aujourdhui().subtract(const Duration(days: 7));
+    return mortalites
+        .where((m) =>
+            m.batimentId == batimentId &&
+            m.date != null &&
+            !m.date!.isBefore(depuis))
+        .fold<int>(0, (s, m) => s + m.nombre);
+  }
+
+  Vaccination? vaccinFait(String batimentId, String vaccin, int ageJours) =>
+      vaccinations.cast<Vaccination?>().firstWhere(
+            (v) =>
+                v!.batimentId == batimentId &&
+                v.vaccin == vaccin &&
+                v.ageJours == ageJours,
+            orElse: () => null,
+          );
 
   List<Profil> gerants() => personnes.where((p) => p.estGerant).toList();
   List<Profil> fermiers() => personnes.where((p) => p.estFermier).toList();

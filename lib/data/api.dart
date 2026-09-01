@@ -22,13 +22,20 @@ class FichierChoisi {
     return nom.substring(point + 1).toLowerCase();
   }
 
-  /// Sans ce type, le navigateur télécharge le reçu au lieu de l'afficher.
+  /// Sans ce type, le navigateur télécharge le fichier au lieu de le
+  /// montrer, et une vidéo refuse de se lire.
   String get typeMime => switch (extension) {
         'jpg' || 'jpeg' => 'image/jpeg',
         'png' => 'image/png',
         'webp' => 'image/webp',
         'heic' => 'image/heic',
         'pdf' => 'application/pdf',
+        'mp4' => 'video/mp4',
+        'mov' => 'video/quicktime',
+        '3gp' => 'video/3gpp',
+        'webm' => 'video/webm',
+        'mkv' => 'video/x-matroska',
+        'avi' => 'video/x-msvideo',
         _ => 'application/octet-stream',
       };
 }
@@ -150,6 +157,29 @@ class Api {
 
   static Future<void> changerMotDePasse(String nouveau) =>
       _db.auth.updateUser(UserAttributes(password: nouveau));
+
+  /// L'administrateur redonne un mot de passe à quelqu'un qui a perdu le
+  /// sien. La base vérifie elle-même que l'appelant est bien admin :
+  /// l'application ne détient aucun pouvoir spécial.
+  static Future<String> adminChangerMotDePasse(
+      String profilId, String nouveau) async {
+    final r = await _db.rpc('admin_changer_mot_de_passe', params: {
+      'p_profil': profilId,
+      'p_nouveau': nouveau,
+    });
+    return '$r';
+  }
+
+  /// Change l'identifiant de connexion. Il sert aussi d'adresse interne,
+  /// donc la base le met à jour aux trois endroits d'un seul coup.
+  static Future<String> adminChangerIdentifiant(
+      String profilId, String nouveau) async {
+    final r = await _db.rpc('admin_changer_identifiant', params: {
+      'p_profil': profilId,
+      'p_nouveau': nouveau,
+    });
+    return '$r';
+  }
 
   /// Attribue un gérant et des fermiers à une ferme, en une passe.
   static Future<void> attribuer({
@@ -408,6 +438,35 @@ class Api {
 
   static Future<void> supprimerRapport(String id) =>
       _db.from('rapports').delete().eq('id', id);
+
+  // ── SANTÉ : MORTALITÉ ET VACCINS ───────────────────────────────────
+  static Future<List<Mortalite>> mortalites({String? fermeId}) async {
+    var q = _db.from('mortalites').select();
+    if (fermeId != null) q = q.eq('ferme_id', fermeId);
+    final r = await q.order('date', ascending: false).limit(500);
+    return r.map<Mortalite>((m) => Mortalite.depuis(m)).toList();
+  }
+
+  /// Une seule ligne par bâtiment et par jour : resaisir corrige.
+  static Future<void> enregistrerMortalite(Map<String, dynamic> champs) =>
+      _db.from('mortalites').upsert(champs, onConflict: 'batiment_id,date');
+
+  static Future<void> supprimerMortalite(String id) =>
+      _db.from('mortalites').delete().eq('id', id);
+
+  static Future<List<Vaccination>> vaccinations({String? fermeId}) async {
+    var q = _db.from('vaccinations').select();
+    if (fermeId != null) q = q.eq('ferme_id', fermeId);
+    final r = await q.order('date_faite', ascending: false).limit(500);
+    return r.map<Vaccination>((m) => Vaccination.depuis(m)).toList();
+  }
+
+  static Future<void> enregistrerVaccination(Map<String, dynamic> champs) =>
+      _db.from('vaccinations').upsert(champs,
+          onConflict: 'batiment_id,vaccin,age_jours');
+
+  static Future<void> supprimerVaccination(String id) =>
+      _db.from('vaccinations').delete().eq('id', id);
 
   // ── PHOTOS ─────────────────────────────────────────────────────────
   static Future<List<Photo>> photos({String? fermeId}) async {

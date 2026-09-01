@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../core/constantes.dart';
+import '../core/elevage.dart';
 import '../core/format.dart';
 import '../core/theme.dart';
 import '../data/api.dart';
@@ -493,6 +494,7 @@ Future<void> formulaireBatiment(BuildContext context,
       TextEditingController(text: batiment?.surface.toString() ?? '');
   var type = batiment?.type ?? typesBatiment.first;
   var etatBat = batiment?.etat ?? etatsBatiment.first;
+  DateTime? miseEnPlace = batiment?.dateMiseEnPlace;
 
   final ok = await ouvrirFormulaire(
     context,
@@ -520,12 +522,36 @@ Future<void> formulaireBatiment(BuildContext context,
       Row(children: [
         Expanded(
             child: ChampNombre(poules,
-                libelle: 'Nombre de poules', indice: 'ex : 600')),
+                libelle: 'Effectif mis en place', indice: 'ex : 600')),
         const SizedBox(width: 12),
         Expanded(
             child:
                 ChampNombre(surface, libelle: 'Surface', suffixe: 'm²')),
       ]),
+      _champDateOptionnelle(c, 'Jour d’arrivage du lot', miseEnPlace, (d) {
+        miseEnPlace = d;
+        rafraichir();
+      }),
+      if (miseEnPlace == null)
+        const Bandeau(
+          titre: 'Renseignez le jour d’arrivage',
+          texte:
+              'C’est lui qui donne l’âge du lot. Sans âge, pas de calendrier '
+              'vaccinal et pas de comparaison de la ponte au standard.',
+          couleur: Palette.orFonce,
+          icone: Icons.event_available_outlined,
+        )
+      else
+        Bandeau(
+          titre:
+              'Lot de ${DateTime.now().difference(miseEnPlace!).inDays ~/ 7} semaines',
+          texte:
+              '${phaseDuLot(DateTime.now().difference(miseEnPlace!).inDays ~/ 7)}'
+              ' · ponte attendue à cet âge : '
+              '${ponteAttendue(DateTime.now().difference(miseEnPlace!).inDays ~/ 7)} %',
+          couleur: Palette.vert,
+          icone: Icons.cake_outlined,
+        ),
       ChampNombre(prix,
           libelle: 'Prix d’une alvéole',
           argent: true,
@@ -554,6 +580,8 @@ Future<void> formulaireBatiment(BuildContext context,
         'prix_alveole': int.tryParse(prix.text) ?? prixDefaut,
         'surface': int.tryParse(surface.text) ?? 0,
         'etat': etatBat,
+        'date_mise_en_place':
+            miseEnPlace == null ? null : iso(miseEnPlace!),
       };
       return etat.agir(() => batiment == null
           ? Api.creerBatiment(champs)
@@ -979,6 +1007,205 @@ Future<void> formulaireRapport(BuildContext context) async {
     },
   );
   if (ok && context.mounted) message(context, 'Rapport envoyé');
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// MORTALITÉ
+// ══════════════════════════════════════════════════════════════════════
+Future<void> formulaireMortalite(BuildContext context, Batiment batiment,
+    {DateTime? jourCible}) async {
+  final etat = context.read<Etat>();
+  if (!_autorise(context, etat)) return;
+
+  var date = jourCible ?? aujourdhui();
+  final existante = etat.mortalites.cast<Mortalite?>().firstWhere(
+        (m) =>
+            m!.batimentId == batiment.id &&
+            m.date != null &&
+            iso(m.date!) == iso(date),
+        orElse: () => null,
+      );
+
+  final nombre =
+      TextEditingController(text: existante == null ? '' : '${existante.nombre}');
+  final note = TextEditingController(text: existante?.note ?? '');
+  final images = <FichierChoisi>[];
+  var cause = existante?.cause ?? causesMortalite.first;
+
+  final vivantes = etat.effectifVivant(batiment);
+
+  final ok = await ouvrirFormulaire(
+    context,
+    titre: 'Mortalité — ${batiment.nom}',
+    emoji: '🪦',
+    couleur: Palette.rouge,
+    champs: (c, rafraichir) => [
+      Bandeau(
+        titre: '${nb(vivantes)} poules vivantes sur ${nb(batiment.nbPoules)}',
+        texte: batiment.nbPoules > 0
+            ? 'Mortalité cumulée : ${etat.tauxMortalite(batiment).toStringAsFixed(1)} % de l’effectif de départ.'
+            : null,
+        couleur: Palette.gris,
+        icone: Icons.groups_outlined,
+      ),
+      const SizedBox(height: 16),
+      ChampDate(
+          valeur: date,
+          libelle: 'Jour du constat',
+          auChangement: (d) {
+            date = d;
+            rafraichir();
+          }),
+      ChampNombre(nombre,
+          libelle: 'Nombre de poules mortes',
+          indice: '0 si aucune',
+          obligatoire: true,
+          icone: Icons.remove_circle_outline_rounded,
+          auChangement: rafraichir),
+      ChampListe<String>(
+        valeur: cause,
+        libelle: 'Cause probable',
+        icone: Icons.help_outline_rounded,
+        options: [
+          for (final x in causesMortalite)
+            DropdownMenuItem(
+                value: x, child: Text('${emojiCause(x)}  ${_libelleCause(x)}')),
+        ],
+        auChangement: (v) {
+          cause = v!;
+          rafraichir();
+        },
+      ),
+      ChampTexte(note,
+          libelle: 'Ce que vous avez observé',
+          indice: 'ex : trouvées le matin près de l’abreuvoir',
+          lignes: 3),
+      ChoixPhotos(
+        photos: images,
+        auChangement: rafraichir,
+        titre: 'Photos',
+        maximum: 4,
+      ),
+      const SizedBox(height: 12),
+      const Bandeau(
+        titre: 'Déclarez même quand c’est zéro',
+        texte:
+            'Une journée sans mort est une information : c’est ce qui permet '
+            'de repérer le jour où ça décroche.',
+        couleur: Palette.bleu,
+      ),
+    ],
+    enregistrer: () async {
+      final n = int.tryParse(nombre.text);
+      if (n == null || n < 0) return 'Indiquez le nombre de poules mortes.';
+      if (n > vivantes + (existante?.nombre ?? 0)) {
+        return 'Vous déclarez plus de morts qu’il n’y a de poules vivantes '
+            '(${nb(vivantes)}). Vérifiez le chiffre.';
+      }
+      return etat.agir(() async {
+        final liens = await Api.envoyerFichiers(images, 'mortalites');
+        await Api.enregistrerMortalite({
+          'ferme_id': batiment.fermeId,
+          'batiment_id': batiment.id,
+          'auteur_id': etat.moi!.id,
+          'role_auteur': etat.role,
+          'date': iso(date),
+          'nombre': n,
+          'cause': cause,
+          'note': note.text.trim(),
+          if (liens.isNotEmpty) 'photos': liens,
+        });
+      });
+    },
+  );
+  if (ok && context.mounted) message(context, 'Mortalité enregistrée');
+}
+
+String _libelleCause(String c) => switch (c) {
+      'inconnue' => 'Cause inconnue',
+      'maladie' => 'Maladie',
+      'chaleur' => 'Coup de chaleur',
+      'écrasement' => 'Écrasement',
+      'prédateur' => 'Prédateur',
+      'accident' => 'Accident',
+      'cannibalisme' => 'Picage / cannibalisme',
+      'réforme' => 'Réforme (vendue)',
+      _ => c,
+    };
+
+// ══════════════════════════════════════════════════════════════════════
+// VACCINATION
+// ══════════════════════════════════════════════════════════════════════
+Future<void> formulaireVaccination(
+    BuildContext context, Batiment batiment, EtapeVaccin etape) async {
+  final etat = context.read<Etat>();
+  if (!_autorise(context, etat)) return;
+
+  final prevue = batiment.dateAuJour(etape.jour);
+  var date = (prevue != null && !prevue.isAfter(aujourdhui()))
+      ? prevue
+      : aujourdhui();
+  final note = TextEditingController();
+  final images = <FichierChoisi>[];
+
+  final ok = await ouvrirFormulaire(
+    context,
+    titre: etape.vaccin,
+    emoji: '💉',
+    champs: (c, rafraichir) => [
+      Bandeau(
+        titre: 'Prévu au ${etape.jour}ᵉ jour du lot',
+        texte: prevue == null
+            ? null
+            : 'soit le ${jour(prevue)} pour ${batiment.nom}.',
+        couleur: Palette.vert,
+        icone: Icons.event_rounded,
+      ),
+      const SizedBox(height: 14),
+      Bloc(
+        padding: const EdgeInsets.all(14),
+        enfant: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              LigneInfo('Protège contre', etape.contre),
+              LigneInfo('Voie d’administration', etape.voie),
+            ]),
+      ),
+      const SizedBox(height: 16),
+      ChampDate(
+          valeur: date,
+          libelle: 'Jour où le vaccin a été fait',
+          auChangement: (d) {
+            date = d;
+            rafraichir();
+          }),
+      ChampTexte(note,
+          libelle: 'Note',
+          indice: 'Lot du vaccin, vétérinaire, difficulté rencontrée…',
+          lignes: 3),
+      ChoixPhotos(
+        photos: images,
+        auChangement: rafraichir,
+        titre: 'Photos (flacon, ordonnance…)',
+        maximum: 4,
+      ),
+    ],
+    enregistrer: () => etat.agir(() async {
+      final liens = await Api.envoyerFichiers(images, 'vaccins');
+      await Api.enregistrerVaccination({
+        'ferme_id': batiment.fermeId,
+        'batiment_id': batiment.id,
+        'auteur_id': etat.moi!.id,
+        'role_auteur': etat.role,
+        'vaccin': etape.vaccin,
+        'age_jours': etape.jour,
+        'date_faite': iso(date),
+        'note': note.text.trim(),
+        if (liens.isNotEmpty) 'photos': liens,
+      });
+    }),
+  );
+  if (ok && context.mounted) message(context, '${etape.vaccin} enregistré');
 }
 
 // ══════════════════════════════════════════════════════════════════════

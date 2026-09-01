@@ -96,10 +96,17 @@ class Batiment {
   final String fermeId;
   final String nom;
   final String type;
+
+  /// L'effectif MIS EN PLACE au départ — les poussins arrivés le premier
+  /// jour. L'effectif vivant se calcule en retranchant les morts.
   final int nbPoules;
   final int prixAlveole;
   final int surface;
   final String etat;
+
+  /// Le jour d'arrivage. C'est le point zéro : il donne l'âge du lot,
+  /// et l'âge commande le calendrier vaccinal et la ponte attendue.
+  final DateTime? dateMiseEnPlace;
 
   Batiment.depuis(Map<String, dynamic> m)
       : id = _txt(m['id']),
@@ -109,7 +116,71 @@ class Batiment {
         nbPoules = _int(m['nb_poules']),
         prixAlveole = _int(m['prix_alveole']),
         surface = _int(m['surface']),
-        etat = _txt(m['etat']);
+        etat = _txt(m['etat']),
+        dateMiseEnPlace = _date(m['date_mise_en_place']);
+
+  /// Âge du lot en jours. -1 si la date d'arrivage n'est pas renseignée.
+  int get ageJours => dateMiseEnPlace == null
+      ? -1
+      : DateTime.now().difference(dateMiseEnPlace!).inDays;
+
+  int get ageSemaines => ageJours < 0 ? -1 : ageJours ~/ 7;
+
+  bool get ageConnu => dateMiseEnPlace != null;
+
+  /// La date à laquelle le lot atteindra cet âge.
+  DateTime? dateAuJour(int jour) =>
+      dateMiseEnPlace?.add(Duration(days: jour));
+}
+
+/// Des poules mortes un jour donné, dans un bâtiment donné.
+class Mortalite {
+  final String id;
+  final String fermeId;
+  final String batimentId;
+  final String auteurId;
+  final String roleAuteur;
+  final DateTime? date;
+  final int nombre;
+  final String cause;
+  final String note;
+  final List<String> photos;
+
+  Mortalite.depuis(Map<String, dynamic> m)
+      : id = _txt(m['id']),
+        fermeId = _txt(m['ferme_id']),
+        batimentId = _txt(m['batiment_id']),
+        auteurId = _txt(m['auteur_id']),
+        roleAuteur = _txt(m['role_auteur']),
+        date = _date(m['date']),
+        nombre = _int(m['nombre']),
+        cause = _txt(m['cause']),
+        note = _txt(m['note']),
+        photos = _liens(m['photos']);
+}
+
+/// Un vaccin réellement administré à un lot.
+class Vaccination {
+  final String id;
+  final String fermeId;
+  final String batimentId;
+  final String auteurId;
+  final String vaccin;
+  final int ageJours;
+  final DateTime? dateFaite;
+  final String note;
+  final List<String> photos;
+
+  Vaccination.depuis(Map<String, dynamic> m)
+      : id = _txt(m['id']),
+        fermeId = _txt(m['ferme_id']),
+        batimentId = _txt(m['batiment_id']),
+        auteurId = _txt(m['auteur_id']),
+        vaccin = _txt(m['vaccin']),
+        ageJours = _int(m['age_jours']),
+        dateFaite = _date(m['date_faite']),
+        note = _txt(m['note']),
+        photos = _liens(m['photos']);
 }
 
 /// Une saisie d'argent ou de production, avec son parcours de validation.

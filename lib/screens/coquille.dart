@@ -18,6 +18,7 @@ import 'presences.dart';
 import 'productions.dart';
 import 'rapport_global.dart';
 import 'rapports.dart';
+import 'sante.dart';
 import 'recettes.dart';
 import 'signalements.dart';
 import 'stocks.dart';
@@ -76,6 +77,8 @@ class _CoquilleState extends State<Coquille> {
                 Icons.insert_chart_rounded, EcranRapportGlobal()),
             Onglet('Analyse', Icons.query_stats_outlined,
                 Icons.query_stats_rounded, EcranAnalyse()),
+            Onglet('Santé', Icons.vaccines_outlined,
+                Icons.vaccines_rounded, EcranSante()),
             Onglet('Photos', Icons.photo_library_outlined,
                 Icons.photo_library_rounded, EcranPhotos()),
           ],
@@ -106,6 +109,8 @@ class _CoquilleState extends State<Coquille> {
                 Icons.access_time_filled_rounded, EcranPresences()),
             Onglet('Analyse', Icons.query_stats_outlined,
                 Icons.query_stats_rounded, EcranAnalyse()),
+            Onglet('Santé', Icons.vaccines_outlined,
+                Icons.vaccines_rounded, EcranSante()),
             Onglet('Photos', Icons.photo_library_outlined,
                 Icons.photo_library_rounded, EcranPhotos()),
           ],
@@ -128,6 +133,8 @@ class _CoquilleState extends State<Coquille> {
                 Icons.description_rounded, EcranRapports()),
             Onglet('Dépôts', Icons.account_balance_outlined,
                 Icons.account_balance_rounded, EcranDepots()),
+            Onglet('Santé', Icons.vaccines_outlined,
+                Icons.vaccines_rounded, EcranSante()),
             Onglet('Photos', Icons.photo_library_outlined,
                 Icons.photo_library_rounded, EcranPhotos()),
           ],

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/elevage.dart';
 import '../core/format.dart';
 import '../core/theme.dart';
 import '../data/etat.dart';
@@ -195,6 +196,102 @@ class EcranAlertes extends StatelessWidget {
               'l’aliment et la température du bâtiment, et regardez s’il y a '
               'des poules abattues.',
         ));
+      }
+    }
+
+    // ── 1 bis. Mortalité et vaccins ──
+    for (final b in etat.batiments) {
+      final vivantes = etat.effectifVivant(b);
+      if (b.nbPoules <= 0) continue;
+
+      // Un pic de morts sur une journée : le signal le plus brutal.
+      final duJour = etat.mortsDuJour(b.id, jourCourant);
+      if (duJour > 0 && vivantes > 0 && duJour / vivantes * 100 >= 0.5) {
+        liste.add(Alerte(
+          Gravite.critique,
+          Icons.dangerous_outlined,
+          'Mortalité anormale — ${b.nom}',
+          '$duJour poules mortes aujourd’hui sur ${nb(vivantes)} vivantes, '
+              'soit ${(duJour / vivantes * 100).toStringAsFixed(2)} % en un jour.'
+              '${etat.estAdmin ? ' (${etat.nomFerme(b.fermeId)})' : ''}',
+          conseil:
+              'Au-delà de 0,5 % en une journée, on ne parle plus de pertes '
+              'normales. Isolez les malades et appelez le vétérinaire '
+              'aujourd’hui, pas demain.',
+        ));
+      }
+
+      // La mortalité cumulée dépasse-t-elle ce qu'on tolère à cet âge ?
+      if (b.ageConnu) {
+        final taux = etat.tauxMortalite(b);
+        final plafond = mortaliteAcceptable(b.ageSemaines);
+        if (taux > plafond * 1.5) {
+          liste.add(Alerte(
+            Gravite.attention,
+            Icons.trending_down_rounded,
+            'Mortalité cumulée élevée — ${b.nom}',
+            '${taux.toStringAsFixed(1)} % depuis la mise en place, alors '
+                'qu’on attend moins de ${plafond.toStringAsFixed(1)} % à '
+                '${b.ageSemaines} semaines.',
+            conseil:
+                'Regardez l’historique des causes dans l’écran Santé : si '
+                '« maladie » revient, il y a un foyer à traiter.',
+          ));
+        }
+
+        // Vaccins en retard.
+        for (final e in programmeVaccinal) {
+          final retard = b.ageJours - e.jour;
+          if (retard > 3 &&
+              retard < 60 &&
+              etat.vaccinFait(b.id, e.vaccin, e.jour) == null) {
+            liste.add(Alerte(
+              retard > 14 ? Gravite.critique : Gravite.attention,
+              Icons.vaccines_rounded,
+              'Vaccin en retard — ${e.vaccin}',
+              '${b.nom} : prévu au ${e.jour}ᵉ jour, soit le '
+                  '${jour(b.dateAuJour(e.jour))}. Retard de $retard jours.'
+                  '${etat.estAdmin ? ' (${etat.nomFerme(b.fermeId)})' : ''}',
+              conseil: 'Protège contre ${e.contre}. '
+                  'Si le vaccin a été fait, cochez-le dans l’écran Santé '
+                  'pour faire disparaître cette alerte.',
+            ));
+          } else if (retard >= -7 &&
+              retard <= 3 &&
+              etat.vaccinFait(b.id, e.vaccin, e.jour) == null) {
+            liste.add(Alerte(
+              Gravite.information,
+              Icons.event_available_outlined,
+              'Vaccin à faire — ${e.vaccin}',
+              '${b.nom} : ${retard == 0 ? 'aujourd’hui' : (retard > 0 ? 'depuis $retard jour(s)' : 'dans ${-retard} jour(s)')}, '
+                  'le ${jour(b.dateAuJour(e.jour))}. ${e.voie}.',
+              conseil: 'Contre ${e.contre}.',
+            ));
+          }
+        }
+      }
+
+      // Aucune déclaration de mortalité depuis une semaine : on ne sait
+      // pas si tout va bien ou si personne ne compte.
+      if (etat.mortalites.any((m) => m.batimentId == b.id)) {
+        final derniere = etat.mortalites
+            .where((m) => m.batimentId == b.id && m.date != null)
+            .map((m) => m.date!)
+            .fold<DateTime?>(null,
+                (a, d) => a == null || d.isAfter(a) ? d : a);
+        if (derniere != null &&
+            jourCourant.difference(derniere).inDays >= 7) {
+          liste.add(Alerte(
+            Gravite.information,
+            Icons.event_busy_outlined,
+            'Pas de suivi de mortalité — ${b.nom}',
+            'Dernière déclaration le ${jour(derniere)}, il y a '
+                '${jourCourant.difference(derniere).inDays} jours.',
+            conseil:
+                'Déclarez même les journées à zéro : c’est ce qui permet de '
+                'repérer le jour où ça décroche.',
+          ));
+        }
       }
     }
 
