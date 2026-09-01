@@ -229,6 +229,40 @@ class _EcranUtilisateursState extends State<EcranUtilisateurs> {
                 ),
               ]),
             ),
+            if (etat.estAdmin) ...[
+              const TitreSection('Accès'),
+              Bloc(
+                enfant: Column(children: [
+                  LigneInfo('Identifiant', p.login,
+                      icone: Icons.badge_outlined),
+                  const SizedBox(height: 6),
+                  Row(children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          Navigator.pop(feuille);
+                          await _changerIdentifiant(context, etat, p);
+                        },
+                        icon: const Icon(Icons.alternate_email_rounded,
+                            size: 18),
+                        label: const Text('Identifiant'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          Navigator.pop(feuille);
+                          await _changerMotDePasse(context, etat, p);
+                        },
+                        icon: const Icon(Icons.key_rounded, size: 18),
+                        label: const Text('Mot de passe'),
+                      ),
+                    ),
+                  ]),
+                ]),
+              ),
+            ],
             const SizedBox(height: 22),
             Row(children: [
               Expanded(
@@ -370,6 +404,169 @@ class _EcranUtilisateursState extends State<EcranUtilisateurs> {
           e ?? (suspendre ? 'Compte suspendu' : 'Compte réactivé'),
           erreur: e != null);
     }
+  }
+
+  // ── Les accès ──────────────────────────────────────────────────────
+  /// Demande une nouvelle valeur, puis la montre en grand : c'est ce
+  /// que l'administrateur doit recopier et transmettre.
+  Future<String?> _demander(
+    BuildContext context, {
+    required String titre,
+    required String libelle,
+    required String indice,
+    required IconData icone,
+    String depart = '',
+    bool masque = false,
+  }) async {
+    final champ = TextEditingController(text: depart);
+    var cache = masque;
+    return showDialog<String>(
+      context: context,
+      builder: (c) => StatefulBuilder(
+        builder: (c, rafraichir) => AlertDialog(
+          icon: Icon(icone, size: 36, color: Palette.vert),
+          title: Text(titre, textAlign: TextAlign.center),
+          content: TextField(
+            controller: champ,
+            autofocus: true,
+            obscureText: cache,
+            decoration: InputDecoration(
+              labelText: libelle,
+              hintText: indice,
+              suffixIcon: masque
+                  ? IconButton(
+                      icon: Icon(cache
+                          ? Icons.visibility_outlined
+                          : Icons.visibility_off_outlined),
+                      onPressed: () => rafraichir(() => cache = !cache),
+                    )
+                  : null,
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(c),
+                child: const Text('Annuler')),
+            FilledButton(
+              onPressed: () => Navigator.pop(c, champ.text.trim()),
+              child: const Text('Changer'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Affiche la nouvelle valeur en grand, avec de quoi la copier.
+  Future<void> _aNoter(
+      BuildContext context, Profil p, String libelle, String valeur) {
+    return showDialog<void>(
+      context: context,
+      builder: (c) => AlertDialog(
+        icon: const Icon(Icons.check_circle_rounded,
+            size: 40, color: Palette.vert),
+        title: const Text('C’est changé', textAlign: TextAlign.center),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text('À transmettre à ${p.nomComplet} :',
+              textAlign: TextAlign.center,
+              style: Theme.of(c).textTheme.bodyMedium),
+          const SizedBox(height: 14),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+            decoration: BoxDecoration(
+              color: Palette.vert.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(children: [
+              Text(libelle.toUpperCase(),
+                  style: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1,
+                      color: Palette.gris)),
+              const SizedBox(height: 6),
+              SelectableText(valeur,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                      fontSize: 21,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                      color: Palette.vert)),
+            ]),
+          ),
+          const SizedBox(height: 12),
+          Text(
+              'Notez-le maintenant : il ne sera plus affiché.',
+              textAlign: TextAlign.center,
+              style: Theme.of(c).textTheme.bodySmall),
+        ]),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          FilledButton(
+              onPressed: () => Navigator.pop(c),
+              child: const Text('J’ai noté')),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _changerIdentifiant(
+      BuildContext context, Etat etat, Profil p) async {
+    final nouveau = await _demander(
+      context,
+      titre: 'Identifiant de ${p.nomComplet}',
+      libelle: 'Nouvel identifiant',
+      indice: 'ex : 48213705',
+      icone: Icons.alternate_email_rounded,
+      depart: p.login,
+    );
+    if (nouveau == null || !context.mounted) return;
+    if (nouveau.isEmpty || nouveau == p.login) return;
+    if (nouveau.length < 3) {
+      message(context, 'L’identifiant doit faire au moins 3 caractères.',
+          erreur: true);
+      return;
+    }
+
+    String? retour;
+    final e = await etat.agir(() async {
+      retour = await Api.adminChangerIdentifiant(p.id, nouveau);
+    });
+    if (!context.mounted) return;
+    if (e != null) {
+      message(context, e, erreur: true);
+      return;
+    }
+    await _aNoter(context, p, 'Identifiant', retour ?? nouveau);
+  }
+
+  Future<void> _changerMotDePasse(
+      BuildContext context, Etat etat, Profil p) async {
+    final nouveau = await _demander(
+      context,
+      titre: 'Mot de passe de ${p.nomComplet}',
+      libelle: 'Nouveau mot de passe',
+      indice: 'au moins 6 caractères',
+      icone: Icons.key_rounded,
+      masque: true,
+    );
+    if (nouveau == null || !context.mounted) return;
+    if (nouveau.isEmpty) return;
+    if (nouveau.length < 6) {
+      message(context, 'Le mot de passe doit faire au moins 6 caractères.',
+          erreur: true);
+      return;
+    }
+
+    final e =
+        await etat.agir(() => Api.adminChangerMotDePasse(p.id, nouveau));
+    if (!context.mounted) return;
+    if (e != null) {
+      message(context, e, erreur: true);
+      return;
+    }
+    await _aNoter(context, p, 'Mot de passe', nouveau);
   }
 
   Future<void> _supprimer(BuildContext context, Etat etat, Profil p) async {

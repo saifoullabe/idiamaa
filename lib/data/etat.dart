@@ -31,6 +31,7 @@ class Etat extends ChangeNotifier {
   List<Photo> photos = [];
   List<Client> clients = [];
   List<Vente> ventes = [];
+  List<SortieZone> sorties = [];
   List<Mortalite> mortalites = [];
   List<Vaccination> vaccinations = [];
   List<Pointage> pointages = [];
@@ -135,6 +136,7 @@ class Etat extends ChangeNotifier {
     photos = [];
     clients = [];
     ventes = [];
+    sorties = [];
     mortalites = [];
     vaccinations = [];
     pointages = [];
@@ -202,6 +204,8 @@ class Etat extends ChangeNotifier {
           <Vaccination>[]),
       lire('articles', Api.articlesPerso, <String, List<String>>{}),
       lire('mon profil', Api.monProfil, null),
+      lire('sorties de zone', () => Api.sorties(fermeId: portee),
+          <SortieZone>[]),
     ]);
 
     fermes = resultats[0] as List<Ferme>;
@@ -225,6 +229,7 @@ class Etat extends ChangeNotifier {
     articlesPerso = resultats[18] as Map<String, List<String>>;
     final profilFrais = resultats[19] as Profil?;
     if (profilFrais != null) moi = profilFrais;
+    sorties = resultats[20] as List<SortieZone>;
 
     // Tout est tombé : c'est le réseau, pas une table absente.
     if (echouees == tentees) {

@@ -384,6 +384,33 @@ class Api {
     });
   }
 
+  // ── SORTIES DE ZONE ET ITINÉRAIRE ──────────────────────────────────
+  /// Les fois où quelqu'un a quitté sa ferme pendant qu'il était en
+  /// ligne. C'est la base qui les écrit, pendant le suivi.
+  static Future<List<SortieZone>> sorties({String? fermeId}) async {
+    var q = _db.from('sorties_zone').select();
+    if (fermeId != null) q = q.eq('ferme_id', fermeId);
+    final r = await q.order('moment', ascending: false).limit(200);
+    return r.map<SortieZone>((m) => SortieZone.depuis(m)).toList();
+  }
+
+  /// Le chemin parcouru pendant un pointage, du plus ancien au plus
+  /// récent. Le suivi s'arrête deux heures après la sortie.
+  static Future<List<Trajet>> trajets(String pointageId) async {
+    final r = await _db
+        .from('trajets')
+        .select()
+        .eq('pointage_id', pointageId)
+        .order('moment')
+        .limit(500);
+    return r.map<Trajet>((m) => Trajet.depuis(m)).toList();
+  }
+
+  /// L'administrateur a vu la sortie : elle ne clignote plus.
+  static Future<void> marquerSortieVue(String id) => _db
+      .from('sorties_zone')
+      .update({'vu_par_admin': true}).eq('id', id);
+
   // ── STOCKS ─────────────────────────────────────────────────────────
   static Future<List<Stock>> stocks({String? fermeId}) async {
     var q = _db.from('stocks').select();

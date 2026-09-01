@@ -1610,6 +1610,272 @@ Future<void> formulaireAttribution(BuildContext context, Ferme ferme) async {
   if (ok && context.mounted) message(context, 'Attribution enregistrée');
 }
 
+// ══════════════════════════════════════════════════════════════════════
+// CLIENT REVENDEUR
+// ══════════════════════════════════════════════════════════════════════
+Future<void> formulaireClient(BuildContext context, {Client? client}) async {
+  final etat = context.read<Etat>();
+  if (!_autorise(context, etat)) return;
+  if (etat.estFermier) {
+    message(context, 'Seuls le gérant et l’administrateur tiennent les '
+        'fiches clients.', erreur: true);
+    return;
+  }
+  if (etat.maFermeId == null && !etat.estAdmin) {
+    message(context, 'Aucune ferme ne vous est assignée.', erreur: true);
+    return;
+  }
+
+  final modification = client != null;
+  String? fermeId = client?.fermeId ??
+      etat.maFermeId ??
+      (etat.fermes.isNotEmpty ? etat.fermes.first.id : null);
+  var type = typesClient.contains(client?.type)
+      ? client!.type
+      : typesClient.first;
+  final nom = TextEditingController(text: client?.nom ?? '');
+  final telephone = TextEditingController(text: client?.telephone ?? '');
+  final telephone2 = TextEditingController(text: client?.telephone2 ?? '');
+  final adresse = TextEditingController(text: client?.adresse ?? '');
+  final note = TextEditingController(text: client?.note ?? '');
+
+  final ok = await ouvrirFormulaire(
+    context,
+    titre: modification ? 'Modifier la fiche' : 'Nouveau client revendeur',
+    emoji: '🏪',
+    couleur: Palette.bleu,
+    champs: (c, rafraichir) => [
+      if (etat.estAdmin && !modification)
+        ChampListe<String>(
+          valeur: fermeId,
+          libelle: 'Ferme',
+          icone: Icons.holiday_village_outlined,
+          options: [
+            for (final f in etat.fermes)
+              DropdownMenuItem(value: f.id, child: Text(f.nom)),
+          ],
+          auChangement: (v) {
+            fermeId = v;
+            rafraichir();
+          },
+        ),
+      ChampTexte(nom,
+          libelle: 'Nom du client',
+          indice: 'ex : Mariama Diallo — marché de Madina',
+          obligatoire: true,
+          icone: Icons.person_outline_rounded),
+      ChampListe<String>(
+        valeur: type,
+        libelle: 'Type de client',
+        icone: Icons.storefront_outlined,
+        options: [
+          for (final t in typesClient)
+            DropdownMenuItem(value: t, child: Text(t)),
+        ],
+        auChangement: (v) {
+          type = v ?? typesClient.first;
+          rafraichir();
+        },
+      ),
+      ChampTexte(telephone,
+          libelle: 'Téléphone',
+          indice: 'ex : 622 00 00 00',
+          clavier: TextInputType.phone,
+          icone: Icons.phone_outlined),
+      ChampTexte(telephone2,
+          libelle: 'Autre téléphone',
+          clavier: TextInputType.phone,
+          icone: Icons.phone_android_outlined),
+      ChampTexte(adresse,
+          libelle: 'Adresse ou marché',
+          indice: 'ex : Marché Madina, allée 4',
+          icone: Icons.place_outlined),
+      ChampTexte(note, libelle: 'Note', lignes: 2),
+    ],
+    enregistrer: () async {
+      if (nom.text.trim().isEmpty) return 'Indiquez le nom du client.';
+      if (fermeId == null) return 'Choisissez une ferme.';
+      final champs = {
+        'nom': nom.text.trim(),
+        'type': type,
+        'telephone': telephone.text.trim(),
+        'telephone2': telephone2.text.trim(),
+        'adresse': adresse.text.trim(),
+        'note': note.text.trim(),
+      };
+      return etat.agir(() async {
+        if (modification) {
+          await Api.majClient(client.id, champs);
+        } else {
+          await Api.creerClient({
+            ...champs,
+            'ferme_id': fermeId,
+            'cree_par': etat.moi!.id,
+            'actif': true,
+          });
+        }
+      });
+    },
+  );
+  if (ok && context.mounted) {
+    message(context, modification ? 'Fiche modifiée' : 'Fiche client créée');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+// ACHAT D'UN CLIENT
+// ══════════════════════════════════════════════════════════════════════
+/// Un achat d'alvéoles. La base crée la vente et la recette ensemble :
+/// il ne peut pas y avoir de facture sans l'argent dans les comptes.
+Future<void> formulaireVente(BuildContext context, {Client? client}) async {
+  final etat = context.read<Etat>();
+  if (!_autorise(context, etat)) return;
+  if (etat.estFermier) {
+    message(context, 'Seuls le gérant et l’administrateur enregistrent '
+        'une vente.', erreur: true);
+    return;
+  }
+
+  final fiches = etat.clients.where((c) => c.actif).toList();
+  if (fiches.isEmpty) {
+    message(context, 'Créez d’abord une fiche client.', erreur: true);
+    return;
+  }
+
+  String? clientId = client?.id ?? fiches.first.id;
+  var date = aujourdhui();
+  var paye = true;
+  final alveoles = TextEditingController();
+  final note = TextEditingController();
+
+  // Le prix par défaut est celui de la ferme du client : le gérant
+  // n'a plus qu'à le corriger quand il fait un geste commercial.
+  Client? fiche() => etat.clients.where((c) => c.id == clientId).firstOrNull;
+  int prixDeLaFerme() => etat.ferme(fiche()?.fermeId)?.prixAlveole ?? 0;
+  final prix = TextEditingController(
+      text: prixDeLaFerme() > 0 ? '${prixDeLaFerme()}' : '');
+
+  int totalCalcule() {
+    final a = int.tryParse(alveoles.text.trim()) ?? 0;
+    final p = double.tryParse(prix.text.replaceAll(',', '.')) ?? 0;
+    return (a * p).round();
+  }
+
+  final ok = await ouvrirFormulaire(
+    context,
+    titre: 'Nouvel achat',
+    emoji: '🧾',
+    libelleBouton: 'Enregistrer et facturer',
+    champs: (c, rafraichir) => [
+      ChampListe<String>(
+        valeur: clientId,
+        libelle: 'Client',
+        icone: Icons.person_outline_rounded,
+        options: [
+          for (final f in fiches)
+            DropdownMenuItem(
+                value: f.id,
+                child: Text(etat.estAdmin
+                    ? '${f.nom} — ${etat.nomFerme(f.fermeId)}'
+                    : f.nom)),
+        ],
+        auChangement: (v) {
+          clientId = v;
+          final p = prixDeLaFerme();
+          if (p > 0) prix.text = '$p';
+          rafraichir();
+        },
+      ),
+      ChampDate(
+          valeur: date,
+          libelle: 'Date de l’achat',
+          auChangement: (d) {
+            date = d;
+            rafraichir();
+          }),
+      ChampNombre(alveoles,
+          libelle: 'Nombre d’alvéoles',
+          indice: '1 alvéole = 30 œufs',
+          obligatoire: true,
+          auChangement: rafraichir,
+          icone: Icons.egg_outlined),
+      ChampNombre(prix,
+          libelle: 'Prix de l’alvéole',
+          argent: true,
+          obligatoire: true,
+          auChangement: rafraichir,
+          icone: Icons.sell_outlined),
+      _totalAchat(c, alveoles.text, totalCalcule()),
+      SwitchListTile.adaptive(
+        value: paye,
+        onChanged: (v) {
+          paye = v;
+          rafraichir();
+        },
+        contentPadding: EdgeInsets.zero,
+        title: Text(paye ? 'Payé comptant' : 'À encaisser plus tard'),
+        subtitle: Text(paye
+            ? 'L’argent est entré dans la caisse.'
+            : 'La facture restera marquée impayée.',
+            style: Theme.of(c).textTheme.bodySmall),
+      ),
+      ChampTexte(note, libelle: 'Note', lignes: 2),
+      const SizedBox(height: 6),
+      _noteValidation(c, etat),
+    ],
+    enregistrer: () async {
+      final a = int.tryParse(alveoles.text.trim()) ?? 0;
+      final p = double.tryParse(prix.text.replaceAll(',', '.')) ?? 0;
+      if (clientId == null) return 'Choisissez un client.';
+      if (a <= 0) return 'Indiquez le nombre d’alvéoles.';
+      if (p <= 0) return 'Indiquez le prix de l’alvéole.';
+      return etat.agir(() => Api.enregistrerVente(
+            clientId: clientId!,
+            date: date,
+            nbAlveoles: a,
+            prixAlveole: p.round(),
+            paye: paye,
+            note: note.text.trim(),
+          ));
+    },
+  );
+  if (ok && context.mounted) {
+    message(context, 'Achat enregistré — la facture est prête');
+  }
+}
+
+/// Le total de l'achat, recalculé sous les yeux du gérant.
+Widget _totalAchat(BuildContext context, String alveoles, int total) {
+  final a = int.tryParse(alveoles.trim()) ?? 0;
+  return Container(
+    margin: const EdgeInsets.only(top: 4, bottom: 4),
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    decoration: BoxDecoration(
+      color: Palette.vert.withValues(alpha: 0.10),
+      borderRadius: BorderRadius.circular(16),
+    ),
+    child: Row(children: [
+      const Icon(Icons.calculate_rounded, size: 20, color: Palette.vert),
+      const SizedBox(width: 12),
+      Expanded(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Montant total',
+              style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 2),
+          Text(gnf(total),
+              style: const TextStyle(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w800,
+                  color: Palette.vert)),
+        ]),
+      ),
+      if (a > 0)
+        Text('${nb(a * 30)} œufs',
+            style: Theme.of(context).textTheme.bodySmall),
+    ]),
+  );
+}
+
 // ── Petites briques partagées par les formulaires ────────────────────
 
 Widget _noteValidation(BuildContext context, Etat etat) {

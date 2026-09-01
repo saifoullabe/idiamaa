@@ -352,6 +352,12 @@ class Pointage {
   final int? duree;
   final String statut;
 
+  /// Vrai seulement si la base a bien renvoyé la colonne et qu'elle vaut
+  /// « vrai ». Une clé absente ne doit jamais faire croire à une sortie
+  /// automatique.
+  final bool sortieAuto;
+  final String motifSortie;
+
   Pointage.depuis(Map<String, dynamic> m)
       : id = _txt(m['id']),
         profilId = _txt(m['profil_id']),
@@ -359,7 +365,9 @@ class Pointage {
         debut = _date(m['debut']) ?? DateTime.now(),
         fin = _date(m['fin']),
         duree = m['duree'] == null ? null : _int(m['duree']),
-        statut = _txt(m['statut']);
+        statut = _txt(m['statut']),
+        sortieAuto = m['sortie_auto'] == true,
+        motifSortie = _txt(m['motif_sortie']);
 
   bool get enCours => statut == 'en_cours';
 
@@ -559,4 +567,52 @@ class Photo {
         batimentId = m['batiment_id'] as String?,
         date = _date(m['date']),
         creeLe = _date(m['cree_le']);
+}
+
+/// Le moment ou un fermier est sorti du perimetre de sa ferme.
+/// La base l'ecrit toute seule pendant le suivi : c'est elle qui
+/// tranche, pas le telephone.
+class SortieZone {
+  final String id;
+  final String? pointageId;
+  final String profilId;
+  final String? fermeId;
+  final DateTime? moment;
+  final double? latitude;
+  final double? longitude;
+  final int? distance;
+  final bool vuParAdmin;
+
+  SortieZone.depuis(Map<String, dynamic> m)
+      : id = _txt(m['id']),
+        pointageId = m['pointage_id'] as String?,
+        profilId = _txt(m['profil_id']),
+        fermeId = m['ferme_id'] as String?,
+        moment = _date(m['moment']),
+        latitude = m['latitude'] == null ? null : _dbl(m['latitude']),
+        longitude = m['longitude'] == null ? null : _dbl(m['longitude']),
+        distance = m['distance'] == null ? null : _int(m['distance']),
+        vuParAdmin = m['vu_par_admin'] == true;
+}
+
+/// Un point du chemin parcouru : ou etait la personne, et quand.
+class Trajet {
+  final String id;
+  final String pointageId;
+  final String profilId;
+  final String? fermeId;
+  final DateTime? moment;
+  final double latitude;
+  final double longitude;
+  final int? distance;
+
+  Trajet.depuis(Map<String, dynamic> m)
+      : id = _txt(m['id']),
+        pointageId = _txt(m['pointage_id']),
+        profilId = _txt(m['profil_id']),
+        fermeId = m['ferme_id'] as String?,
+        moment = _date(m['moment']),
+        latitude = _dbl(m['latitude']),
+        longitude = _dbl(m['longitude']),
+        distance = m['distance'] == null ? null : _int(m['distance']);
 }

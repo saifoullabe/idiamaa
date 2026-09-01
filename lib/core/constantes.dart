@@ -121,6 +121,17 @@ const List<String> produitsRecette = [
   'Autre',
 ];
 
+/// Ce qu'est le client, pour s'y retrouver dans la liste des fiches.
+const List<String> typesClient = [
+  'Revendeur',
+  'Boutique',
+  'Restaurant',
+  'Hôtel',
+  'Particulier',
+  'Grossiste',
+  'Autre',
+];
+
 const List<String> typesBatiment = [
   'Pondeuses',
   'Poussins',

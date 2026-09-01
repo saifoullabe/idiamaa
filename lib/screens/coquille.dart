@@ -10,6 +10,8 @@ import '../main.dart';
 import '../widgets/communs.dart';
 import 'alertes.dart';
 import 'analyse.dart';
+import 'clients.dart';
+import 'itineraire.dart';
 import 'depots.dart';
 import 'depenses.dart';
 import 'fermes.dart';
@@ -112,12 +114,16 @@ class _CoquilleState extends State<Coquille> with WidgetsBindingObserver {
                 EcranUtilisateurs()),
             Onglet('Présences', Icons.access_time_outlined,
                 Icons.access_time_filled_rounded, EcranPresences()),
+            Onglet('Itinéraire', Icons.route_outlined, Icons.route_rounded,
+                EcranItineraire()),
             Onglet('Recettes', Icons.payments_outlined,
                 Icons.payments_rounded, EcranRecettes()),
             Onglet('Dépenses', Icons.receipt_long_outlined,
                 Icons.receipt_long_rounded, EcranDepenses()),
             Onglet('Dépôts', Icons.account_balance_outlined,
                 Icons.account_balance_rounded, EcranDepots()),
+            Onglet('Clients', Icons.storefront_outlined,
+                Icons.storefront_rounded, EcranClients()),
             Onglet('Rapport global', Icons.insert_chart_outlined,
                 Icons.insert_chart_rounded, EcranRapportGlobal()),
             Onglet('Analyse', Icons.query_stats_outlined,
@@ -144,6 +150,8 @@ class _CoquilleState extends State<Coquille> with WidgetsBindingObserver {
                 Icons.payments_rounded, EcranRecettes()),
             Onglet('Dépôts', Icons.account_balance_outlined,
                 Icons.account_balance_rounded, EcranDepots()),
+            Onglet('Clients', Icons.storefront_outlined,
+                Icons.storefront_rounded, EcranClients()),
             Onglet('Stocks', Icons.inventory_2_outlined,
                 Icons.inventory_2_rounded, EcranStocks()),
             Onglet('Signalements', Icons.warning_amber_rounded,

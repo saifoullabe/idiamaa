@@ -5,6 +5,7 @@ import '../core/elevage.dart';
 import '../core/format.dart';
 import '../core/theme.dart';
 import '../data/etat.dart';
+import '../models/modeles.dart';
 import '../widgets/communs.dart';
 
 /// Le degré d'urgence d'une alerte — il décide de la couleur et de l'ordre.
@@ -417,6 +418,36 @@ class EcranAlertes extends StatelessWidget {
           conseil:
               'Les saisies de ses fermiers resteront en attente indéfiniment. '
               'Attribuez-lui un gérant depuis la fiche de la ferme.',
+        ));
+      }
+    }
+
+    // ── 8. Quelqu'un a quitté sa ferme en cours de pointage ──
+    if (etat.estAdmin || etat.estGerant) {
+      final neuves = etat.sorties.where((s) => !s.vuParAdmin).toList();
+      for (final s in neuves.take(5)) {
+        final qui = etat.personnes
+            .cast<Profil?>()
+            .firstWhere((p) => p?.id == s.profilId, orElse: () => null);
+        liste.add(Alerte(
+          Gravite.attention,
+          Icons.route_rounded,
+          'Sortie de zone — ${qui?.nomComplet ?? 'personne inconnue'}',
+          'A quitté ${etat.nomFerme(s.fermeId)} le ${jourMois(s.moment)} à '
+              '${heure(s.moment)}'
+              '${s.distance == null ? '' : ', à ${nb(s.distance)} m'}. '
+              'Le pointage s’est fermé tout seul.',
+          conseil:
+              'Le chemin parcouru est enregistré pendant deux heures après '
+              'la sortie. Il se relit dans l’onglet Itinéraire.',
+        ));
+      }
+      if (neuves.length > 5) {
+        liste.add(Alerte(
+          Gravite.information,
+          Icons.more_horiz_rounded,
+          '${neuves.length - 5} autre(s) sortie(s) de zone',
+          'Toutes les sorties sont listées dans l’onglet Itinéraire.',
         ));
       }
     }
