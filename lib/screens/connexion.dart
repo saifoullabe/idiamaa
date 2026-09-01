@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/constantes.dart';
 import '../core/theme.dart';
 import '../data/etat.dart';
 
@@ -19,14 +20,20 @@ class _EcranConnexionState extends State<EcranConnexion> {
   bool _cache = true;
   bool _occupe = false;
   bool _seSouvenir = true;
+  String _role = Role.admin;
   String? _erreur;
 
   @override
   void initState() {
     super.initState();
     SharedPreferences.getInstance().then((p) {
+      if (!mounted) return;
       final dernier = p.getString('dernier_login');
-      if (dernier != null && mounted) setState(() => _login.text = dernier);
+      final dernierRole = p.getString('dernier_role');
+      setState(() {
+        if (dernier != null) _login.text = dernier;
+        if (dernierRole != null) _role = dernierRole;
+      });
     });
   }
 
@@ -49,6 +56,7 @@ class _EcranConnexionState extends State<EcranConnexion> {
     if (!mounted) return;
     if (probleme == null) {
       final p = await SharedPreferences.getInstance();
+      await p.setString('dernier_role', _role);
       if (_seSouvenir) {
         await p.setString('dernier_login', _login.text.trim());
       } else {
@@ -61,6 +69,8 @@ class _EcranConnexionState extends State<EcranConnexion> {
       _erreur = probleme;
     });
   }
+
+  Color get _couleur => Palette.duRole(_role);
 
   @override
   Widget build(BuildContext context) {
@@ -76,95 +86,102 @@ class _EcranConnexionState extends State<EcranConnexion> {
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 30),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 430),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _entete(),
-                    const SizedBox(height: 26),
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(22, 26, 22, 22),
-                        child: Form(
-                          key: _formulaire,
-                          child: Column(children: [
-                            if (_erreur != null) _messageErreur(),
-                            TextFormField(
-                              controller: _login,
-                              autocorrect: false,
-                              textInputAction: TextInputAction.next,
-                              decoration: const InputDecoration(
-                                labelText: 'Identifiant',
-                                prefixIcon: Icon(Icons.person_outline_rounded),
-                              ),
-                              validator: (v) => (v == null || v.trim().isEmpty)
-                                  ? 'Entrez votre identifiant'
-                                  : null,
+                child: Card(
+                  color: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(26)),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
+                    child: Form(
+                      key: _formulaire,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _entete(),
+                          const SizedBox(height: 22),
+                          _onglets(),
+                          const SizedBox(height: 20),
+                          if (_erreur != null) _messageErreur(),
+                          _libelle('Identifiant'),
+                          TextFormField(
+                            controller: _login,
+                            autocorrect: false,
+                            textInputAction: TextInputAction.next,
+                            decoration: InputDecoration(
+                              hintText: switch (_role) {
+                                Role.admin => 'ex : admin',
+                                Role.gerant => 'ex : dubreka',
+                                _ => 'ex : fermier1',
+                              },
                             ),
-                            const SizedBox(height: 14),
-                            TextFormField(
-                              controller: _motDePasse,
-                              obscureText: _cache,
-                              textInputAction: TextInputAction.done,
-                              onFieldSubmitted: (_) => _entrer(),
-                              decoration: InputDecoration(
-                                labelText: 'Mot de passe',
-                                prefixIcon: const Icon(Icons.lock_outline_rounded),
-                                suffixIcon: IconButton(
-                                  icon: Icon(_cache
-                                      ? Icons.visibility_outlined
-                                      : Icons.visibility_off_outlined),
-                                  onPressed: () =>
-                                      setState(() => _cache = !_cache),
-                                ),
-                              ),
-                              validator: (v) => (v == null || v.isEmpty)
-                                  ? 'Entrez votre mot de passe'
-                                  : null,
-                            ),
-                            const SizedBox(height: 6),
-                            Row(children: [
-                              Checkbox(
-                                value: _seSouvenir,
-                                onChanged: (v) =>
-                                    setState(() => _seSouvenir = v ?? true),
-                              ),
-                              const Expanded(
-                                child: Text('Retenir mon identifiant',
-                                    style: TextStyle(fontSize: 13)),
-                              ),
-                            ]),
-                            const SizedBox(height: 12),
-                            SizedBox(
-                              width: double.infinity,
-                              child: FilledButton.icon(
-                                onPressed: _occupe ? null : _entrer,
-                                icon: _occupe
-                                    ? const SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(
-                                            strokeWidth: 2.4,
-                                            color: Colors.white))
-                                    : const Icon(Icons.login_rounded),
-                                label: Text(
-                                    _occupe ? 'Connexion…' : 'Se connecter'),
+                            validator: (v) => (v == null || v.trim().isEmpty)
+                                ? 'Entrez votre identifiant'
+                                : null,
+                          ),
+                          const SizedBox(height: 16),
+                          _libelle('Mot de passe'),
+                          TextFormField(
+                            controller: _motDePasse,
+                            obscureText: _cache,
+                            textInputAction: TextInputAction.done,
+                            onFieldSubmitted: (_) => _entrer(),
+                            decoration: InputDecoration(
+                              hintText: '••••••••',
+                              suffixIcon: IconButton(
+                                tooltip: _cache ? 'Afficher' : 'Masquer',
+                                icon: Icon(_cache
+                                    ? Icons.visibility_outlined
+                                    : Icons.visibility_off_outlined),
+                                onPressed: () =>
+                                    setState(() => _cache = !_cache),
                               ),
                             ),
-                          ]),
-                        ),
+                            validator: (v) => (v == null || v.isEmpty)
+                                ? 'Entrez votre mot de passe'
+                                : null,
+                          ),
+                          const SizedBox(height: 18),
+                          SizedBox(
+                            height: 54,
+                            child: FilledButton(
+                              style: FilledButton.styleFrom(
+                                backgroundColor: _couleur,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14)),
+                              ),
+                              onPressed: _occupe ? null : _entrer,
+                              child: _occupe
+                                  ? const SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2.5,
+                                          color: Colors.white))
+                                  : const Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Text('Connexion',
+                                            style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w800)),
+                                        SizedBox(width: 8),
+                                        Icon(Icons.arrow_forward_rounded,
+                                            size: 20),
+                                      ],
+                                    ),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          _aide(),
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 20),
-                    Text(
-                      'Gestion des fermes avicoles · Guinée',
-                      style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.55),
-                          fontSize: 11.5),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -176,33 +193,120 @@ class _EcranConnexionState extends State<EcranConnexion> {
 
   Widget _entete() => Column(children: [
         Container(
-          width: 82,
-          height: 82,
+          width: 74,
+          height: 74,
           decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(26),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.28),
-                blurRadius: 26,
-                offset: const Offset(0, 10),
+            shape: BoxShape.circle,
+            color: _couleur.withValues(alpha: 0.10),
+          ),
+          alignment: Alignment.center,
+          child: const Text('🐔', style: TextStyle(fontSize: 38)),
+        ),
+        const SizedBox(height: 14),
+        Text('IDIAMA Agro',
+            style: TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.8,
+                color: Palette.vert)),
+        const SizedBox(height: 3),
+        const Text('Gestion des Fermes Avicoles',
+            style: TextStyle(fontSize: 13, color: Palette.gris)),
+      ]);
+
+  /// Les trois espaces. Le choix ne décide de rien — c'est le compte qui
+  /// dit qui vous êtes — mais il habille l'écran et guide la saisie.
+  Widget _onglets() {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F4EF),
+        borderRadius: BorderRadius.circular(13),
+      ),
+      child: Row(children: [
+        _onglet(Role.admin, '👑', 'Admin'),
+        _onglet(Role.gerant, '🏚️', 'Gérant'),
+        _onglet(Role.fermier, '👨‍🌾', 'Fermier'),
+      ]),
+    );
+  }
+
+  Widget _onglet(String role, String emoji, String texte) {
+    final choisi = _role == role;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _role = role),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: choisi ? Palette.duRole(role) : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(emoji, style: const TextStyle(fontSize: 13)),
+              const SizedBox(width: 5),
+              Flexible(
+                child: Text(texte,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: choisi ? Colors.white : Palette.gris,
+                    )),
               ),
             ],
           ),
-          alignment: Alignment.center,
-          child: const Text('🐔', style: TextStyle(fontSize: 42)),
         ),
-        const SizedBox(height: 16),
-        const Text('IDIAMA Agro',
-            style: TextStyle(
-                color: Colors.white,
-                fontSize: 27,
+      ),
+    );
+  }
+
+  Widget _libelle(String texte) => Padding(
+        padding: const EdgeInsets.only(left: 4, bottom: 7),
+        child: Text(texte.toUpperCase(),
+            style: const TextStyle(
+                fontSize: 10.5,
                 fontWeight: FontWeight.w800,
-                letterSpacing: -0.8)),
-        const SizedBox(height: 4),
-        Text('Fermes avicoles · Production & Finances',
-            style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.72), fontSize: 12.5)),
+                letterSpacing: 0.9,
+                color: Palette.gris)),
+      );
+
+  Widget _aide() => Column(children: [
+        Row(children: [
+          Transform.scale(
+            scale: 0.9,
+            child: Checkbox(
+              value: _seSouvenir,
+              activeColor: _couleur,
+              visualDensity: VisualDensity.compact,
+              onChanged: (v) => setState(() => _seSouvenir = v ?? true),
+            ),
+          ),
+          const Expanded(
+            child: Text('Retenir mon identifiant',
+                style: TextStyle(fontSize: 12.5, color: Palette.gris)),
+          ),
+        ]),
+        const SizedBox(height: 6),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF1F4EF),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Text(
+            'Identifiant ou mot de passe oublié ?\n'
+            'Demandez à votre administrateur : lui seul peut les redonner.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 11.5, height: 1.5, color: Palette.gris),
+          ),
+        ),
       ]);
 
   Widget _messageErreur() => Container(
@@ -210,9 +314,9 @@ class _EcranConnexionState extends State<EcranConnexion> {
         margin: const EdgeInsets.only(bottom: 16),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
-          color: Palette.rouge.withValues(alpha: 0.11),
-          borderRadius: BorderRadius.circular(13),
-          border: Border.all(color: Palette.rouge.withValues(alpha: 0.35)),
+          color: Palette.rouge.withValues(alpha: 0.09),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Palette.rouge.withValues(alpha: 0.3)),
         ),
         child: Row(children: [
           const Icon(Icons.error_outline_rounded,
