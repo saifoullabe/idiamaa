@@ -11,7 +11,7 @@ set -e
 cd "$(dirname "$0")/.."
 
 echo "→ Compilation de la version web…"
-flutter build web --release
+flutter build web --release --no-tree-shake-icons
 
 echo "→ Recopie dans site/"
 rm -rf site
