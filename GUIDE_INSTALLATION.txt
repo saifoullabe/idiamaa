@@ -38,7 +38,12 @@ aucun compte créé depuis l'application ne pourra se connecter.
 4. Ouvrez le fichier  02_idiama_admin.sql , copiez TOUT, collez, « Run ».
    → Si un message dit « must be owner of table users »,
      répondez « Run without RLS » et relancez.
-   → Le tableau doit dire : « prêt — identifiant admin ✅ »
+   → Le tableau du bas affiche votre identifiant ET un mot de passe
+     tiré au hasard.
+
+   ⚠ NOTEZ CE MOT DE PASSE AVANT DE FERMER LA PAGE.
+     Il n'est écrit nulle part ailleurs. Si vous le perdez,
+     relancez ce même fichier : il en fabriquera un nouveau.
 
 
 ÉTAPE 4 — Me donner les deux adresses
@@ -54,9 +59,9 @@ aucun compte créé depuis l'application ne pourra se connecter.
 PREMIÈRE CONNEXION DANS L'APPLICATION
 --------------------------------------
    Identifiant   : admin
-   Mot de passe  : Admin2024!
+   Mot de passe  : celui affiché par l'étape 3
 
-Changez ce mot de passe dès la première connexion :
+Vous pouvez le remplacer par un mot de passe à vous :
    photo en haut à droite  →  Mon compte  →  Nouveau mot de passe.
 
 Ensuite, depuis l'espace administrateur :

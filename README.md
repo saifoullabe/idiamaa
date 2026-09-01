@@ -24,8 +24,9 @@ Un seul code source, deux façons d'y accéder :
    publique dans `lib/core/config.dart`.
 3. Compiler.
 
-Première connexion : identifiant `admin`, mot de passe `Admin2024!`
-(à changer immédiatement depuis « Mon compte »).
+Première connexion : identifiant `admin`. Le mot de passe est tiré au
+hasard par `02_idiama_admin.sql` et affiché une seule fois, à l'écran.
+Aucun mot de passe n'est écrit dans ce dépôt.
 
 ---
 
