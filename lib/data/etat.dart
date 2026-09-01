@@ -155,53 +155,91 @@ class Etat extends ChangeNotifier {
     // s'est tu : sinon on afficherait comme « au travail » quelqu'un
     // dont l'application est éteinte depuis une heure.
     await fermerPointagesMuets();
-    try {
-      final resultats = await Future.wait([
-        Api.fermes(),
-        Api.profils(complet: estAdmin),
-        Api.batiments(fermeId: portee),
-        Api.recettes(fermeId: portee),
-        Api.depenses(fermeId: portee),
-        Api.productions(fermeId: portee),
-        Api.depots(fermeId: portee),
-        Api.stocks(fermeId: portee),
-        Api.signalements(fermeId: portee),
-        Api.rapports(fermeId: portee),
-        Api.pointages(fermeId: portee, profilId: null),
-        Api.pointagesEnCours(),
-        Api.pointageEnCours(moi!.id),
-        Api.photos(fermeId: portee),
-        Api.clients(fermeId: portee),
-        Api.ventes(fermeId: portee),
-        Api.mortalites(fermeId: portee),
-        Api.vaccinations(fermeId: portee),
-        Api.articlesPerso(),
-        Api.monProfil(),
-      ]);
-      fermes = resultats[0] as List<Ferme>;
-      personnes = resultats[1] as List<Profil>;
-      batiments = resultats[2] as List<Batiment>;
-      recettes = resultats[3] as List<Recette>;
-      depenses = resultats[4] as List<Depense>;
-      productions = resultats[5] as List<Production>;
-      depots = resultats[6] as List<Depot>;
-      stocks = resultats[7] as List<Stock>;
-      signalements = resultats[8] as List<Signalement>;
-      rapports = resultats[9] as List<Rapport>;
-      pointages = resultats[10] as List<Pointage>;
-      pointagesEnCours = resultats[11] as List<Pointage>;
-      monPointage = resultats[12] as Pointage?;
-      photos = resultats[13] as List<Photo>;
-      clients = resultats[14] as List<Client>;
-      ventes = resultats[15] as List<Vente>;
-      mortalites = resultats[16] as List<Mortalite>;
-      vaccinations = resultats[17] as List<Vaccination>;
-      articlesPerso = resultats[18] as Map<String, List<String>>;
-      final profilFrais = resultats[19] as Profil?;
-      if (profilFrais != null) moi = profilFrais;
-    } catch (e) {
-      erreur = _lisible(e);
+
+    // Chaque lecture est isolée : si une table manque ou refuse l'accès,
+    // elle revient vide et le reste de l'écran s'affiche quand même.
+    // Avant, une seule requête en échec noircissait toute l'application.
+    final manquants = <String>[];
+    int tentees = 0, echouees = 0;
+
+    Future<T> lire<T>(String quoi, Future<T> Function() requete, T repli) async {
+      tentees++;
+      try {
+        return await requete();
+      } catch (e) {
+        echouees++;
+        final t = e.toString();
+        // « Table introuvable » veut dire qu'un fichier SQL n'a pas été
+        // lancé : on le nomme, c'est réparable en une minute.
+        if (t.contains('PGRST205') || t.contains('does not exist')) {
+          manquants.add(quoi);
+        }
+        return repli;
+      }
     }
+
+    final resultats = await Future.wait<dynamic>([
+      lire('fermes', Api.fermes, <Ferme>[]),
+      lire('profils', () => Api.profils(complet: estAdmin), <Profil>[]),
+      lire('bâtiments', () => Api.batiments(fermeId: portee), <Batiment>[]),
+      lire('recettes', () => Api.recettes(fermeId: portee), <Recette>[]),
+      lire('dépenses', () => Api.depenses(fermeId: portee), <Depense>[]),
+      lire('productions', () => Api.productions(fermeId: portee),
+          <Production>[]),
+      lire('dépôts', () => Api.depots(fermeId: portee), <Depot>[]),
+      lire('stocks', () => Api.stocks(fermeId: portee), <Stock>[]),
+      lire('signalements', () => Api.signalements(fermeId: portee),
+          <Signalement>[]),
+      lire('rapports', () => Api.rapports(fermeId: portee), <Rapport>[]),
+      lire('pointages', () => Api.pointages(fermeId: portee), <Pointage>[]),
+      lire('présences', Api.pointagesEnCours, <Pointage>[]),
+      lire('mon pointage', () => Api.pointageEnCours(moi!.id), null),
+      lire('photos', () => Api.photos(fermeId: portee), <Photo>[]),
+      lire('clients', () => Api.clients(fermeId: portee), <Client>[]),
+      lire('ventes', () => Api.ventes(fermeId: portee), <Vente>[]),
+      lire('mortalités', () => Api.mortalites(fermeId: portee), <Mortalite>[]),
+      lire('vaccinations', () => Api.vaccinations(fermeId: portee),
+          <Vaccination>[]),
+      lire('articles', Api.articlesPerso, <String, List<String>>{}),
+      lire('mon profil', Api.monProfil, null),
+    ]);
+
+    fermes = resultats[0] as List<Ferme>;
+    personnes = resultats[1] as List<Profil>;
+    batiments = resultats[2] as List<Batiment>;
+    recettes = resultats[3] as List<Recette>;
+    depenses = resultats[4] as List<Depense>;
+    productions = resultats[5] as List<Production>;
+    depots = resultats[6] as List<Depot>;
+    stocks = resultats[7] as List<Stock>;
+    signalements = resultats[8] as List<Signalement>;
+    rapports = resultats[9] as List<Rapport>;
+    pointages = resultats[10] as List<Pointage>;
+    pointagesEnCours = resultats[11] as List<Pointage>;
+    monPointage = resultats[12] as Pointage?;
+    photos = resultats[13] as List<Photo>;
+    clients = resultats[14] as List<Client>;
+    ventes = resultats[15] as List<Vente>;
+    mortalites = resultats[16] as List<Mortalite>;
+    vaccinations = resultats[17] as List<Vaccination>;
+    articlesPerso = resultats[18] as Map<String, List<String>>;
+    final profilFrais = resultats[19] as Profil?;
+    if (profilFrais != null) moi = profilFrais;
+
+    // Tout est tombé : c'est le réseau, pas une table absente.
+    if (echouees == tentees) {
+      erreur = 'Pas de connexion. Les données affichées peuvent dater.';
+    } else if (manquants.isNotEmpty) {
+      erreur = manquants.length == 1
+          ? 'La partie « ${manquants.first} » n’est pas encore installée '
+              'dans la base. Le reste fonctionne.'
+          : '${manquants.length} parties ne sont pas encore installées '
+              'dans la base (${manquants.join(', ')}). Le reste fonctionne.';
+    } else if (echouees > 0) {
+      erreur = '$echouees information(s) n’ont pas pu être chargées. '
+          'Tirez vers le bas pour réessayer.';
+    }
+
     chargement = false;
     notifyListeners();
   }
