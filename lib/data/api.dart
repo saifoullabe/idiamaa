@@ -181,6 +181,14 @@ class Api {
     return '$r';
   }
 
+  /// Tire un numéro d'accès à 8 chiffres encore libre. C'est la base
+  /// qui vérifie l'unicité : deux admins qui créent en même temps ne
+  /// peuvent pas tomber sur le même.
+  static Future<String> nouveauNumeroAcces() async {
+    final r = await _db.rpc('nouveau_numero_acces');
+    return '$r';
+  }
+
   /// Attribue un gérant et des fermiers à une ferme, en une passe.
   static Future<void> attribuer({
     required String fermeId,

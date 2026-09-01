@@ -151,6 +151,10 @@ class Etat extends ChangeNotifier {
     notifyListeners();
 
     final portee = estAdmin ? null : maFermeId;
+    // Avant de lire les présences, on ferme celles dont le téléphone
+    // s'est tu : sinon on afficherait comme « au travail » quelqu'un
+    // dont l'application est éteinte depuis une heure.
+    await fermerPointagesMuets();
     try {
       final resultats = await Future.wait([
         Api.fermes(),

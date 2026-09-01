@@ -732,6 +732,18 @@ Future<void> formulaireUtilisateur(BuildContext context,
   FichierChoisi? piece;
   FichierChoisi? contrat;
 
+  // Le numéro d'accès est tiré avant même d'ouvrir le formulaire :
+  // l'administrateur le voit tout de suite et peut le noter.
+  if (creation) {
+    try {
+      login.text = await Api.nouveauNumeroAcces();
+    } catch (_) {
+      // Si le tirage échoue, le bouton dé du formulaire permettra de
+      // réessayer — on n'empêche pas l'admin d'ouvrir l'écran.
+    }
+  }
+  if (!context.mounted) return;
+
   final ok = await ouvrirFormulaire(
     context,
     titre: creation ? 'Nouvel espace utilisateur' : 'Modifier la fiche',
@@ -774,11 +786,21 @@ Future<void> formulaireUtilisateur(BuildContext context,
             rafraichir();
           },
         ),
-      ChampTexte(login,
-          libelle: 'Identifiant de connexion',
-          indice: 'ex : mamadou.bah',
-          icone: Icons.alternate_email_rounded,
-          obligatoire: creation),
+      if (creation)
+        _numeroAcces(c, login, () async {
+          try {
+            login.text = await Api.nouveauNumeroAcces();
+          } catch (e) {
+            if (c.mounted) {
+              message(c, 'Numéro impossible à tirer : $e', erreur: true);
+            }
+          }
+          rafraichir();
+        })
+      else
+        ChampTexte(login,
+            libelle: 'Numéro d’accès',
+            icone: Icons.pin_rounded),
       if (creation)
         ChampTexte(motDePasse,
             libelle: 'Mot de passe',
@@ -895,7 +917,9 @@ Future<void> formulaireUtilisateur(BuildContext context,
       }
       if (tel.text.trim().isEmpty) return 'Le téléphone est obligatoire.';
       if (creation) {
-        if (login.text.trim().isEmpty) return 'L’identifiant est obligatoire.';
+        if (login.text.trim().isEmpty) {
+          return 'Tirez le numéro d’accès en appuyant sur le dé.';
+        }
         if (motDePasse.text.length < 6) {
           return 'Le mot de passe doit faire au moins 6 caractères.';
         }
@@ -952,9 +976,59 @@ Future<void> formulaireUtilisateur(BuildContext context,
     },
   );
   if (ok && context.mounted) {
-    message(context, creation ? 'Espace créé' : 'Fiche mise à jour');
+    if (creation) {
+      // On réaffiche le numéro et le mot de passe une dernière fois :
+      // c'est le seul moment où l'administrateur peut les noter.
+      await showDialog<void>(
+        context: context,
+        builder: (c) => AlertDialog(
+          icon: const Icon(Icons.badge_rounded, size: 40, color: Palette.vert),
+          title: Text('${nom.text.trim()} ${prenom.text.trim()}',
+              textAlign: TextAlign.center),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text('Donnez-lui ces deux informations :',
+                textAlign: TextAlign.center,
+                style: Theme.of(c).textTheme.bodySmall),
+            const SizedBox(height: 18),
+            _aRetenir(c, 'NUMÉRO D’ACCÈS', login.text, Palette.vert),
+            const SizedBox(height: 12),
+            _aRetenir(c, 'MOT DE PASSE', motDePasse.text, Palette.bleu),
+          ]),
+          actionsAlignment: MainAxisAlignment.center,
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(c),
+              child: const Text('J’ai noté'),
+            ),
+          ],
+        ),
+      );
+    }
+    if (context.mounted) {
+      message(context, creation ? 'Espace créé' : 'Fiche mise à jour');
+    }
   }
 }
+
+Widget _aRetenir(BuildContext context, String libelle, String valeur, Color c) =>
+    Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.09),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(children: [
+        Text(libelle, style: Theme.of(context).textTheme.labelSmall),
+        const SizedBox(height: 4),
+        SelectableText(valeur,
+            style: TextStyle(
+                fontSize: 21,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 2,
+                color: c)),
+      ]),
+    );
 
 // ══════════════════════════════════════════════════════════════════════
 // SIGNALEMENT
@@ -1581,6 +1655,58 @@ Widget _champDateOptionnelle(BuildContext context, String libelle,
       ),
     ),
   );
+}
+
+/// Le numéro d'accès à 8 chiffres : tiré par la base, affiché en grand,
+/// et pas modifiable à la main — c'est ce qui garantit qu'il est unique.
+Widget _numeroAcces(BuildContext context, TextEditingController login,
+    Future<void> Function() tirer) {
+  return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+    Text('NUMÉRO D’ACCÈS',
+        style: Theme.of(context).textTheme.labelSmall),
+    const SizedBox(height: 8),
+    Container(
+      padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
+      decoration: BoxDecoration(
+        color: Palette.vert.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Palette.vert.withValues(alpha: 0.3)),
+      ),
+      child: Row(children: [
+        const Icon(Icons.pin_rounded, color: Palette.vert),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Text(
+            login.text.isEmpty ? '— — — — — — — —' : login.text,
+            style: TextStyle(
+              fontSize: 26,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 4,
+              fontFeatures: const [FontFeature.tabularFigures()],
+              color: login.text.isEmpty ? Palette.gris : Palette.vert,
+            ),
+          ),
+        ),
+        IconButton(
+          tooltip: 'Tirer un autre numéro',
+          onPressed: () => tirer(),
+          icon: const Icon(Icons.casino_rounded, color: Palette.vert),
+        ),
+      ]),
+    ),
+    const SizedBox(height: 8),
+    Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 14),
+      child: Text(
+        login.text.isEmpty
+            ? 'Appuyez sur le dé pour tirer le numéro. C’est ce numéro que '
+                'la personne tapera pour se connecter.'
+            : 'C’est ce numéro que la personne tapera pour se connecter. '
+                'Notez-le : vous devrez le lui donner.',
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+    ),
+  ]);
 }
 
 Widget _selecteurPhoto(BuildContext context, FichierChoisi? photo,
