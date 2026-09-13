@@ -113,8 +113,21 @@ class Api {
     String? fermeId,
     Map<String, dynamic> autresChamps = const {},
   }) async {
-    final clientTemporaire =
-        SupabaseClient(Config.supabaseUrl, Config.supabaseAnonKey);
+    // AuthFlowType.implicit est indispensable ici. Un SupabaseClient
+    // construit à la main part en flux PKCE, qui exige un stockage
+    // local ; celui-ci vaut null. gotrue ne protège ce stockage que par
+    // un « assert », et les assert disparaissent dans un APK de
+    // production : à l'inscription, il plantait sur « Null check
+    // operator used on a null value ». Le flux PKCE ne sert qu'aux
+    // connexions par lien externe, dont ce client jetable n'a que faire.
+    final clientTemporaire = SupabaseClient(
+      Config.supabaseUrl,
+      Config.supabaseAnonKey,
+      authOptions: const AuthClientOptions(
+        authFlowType: AuthFlowType.implicit,
+        autoRefreshToken: false,
+      ),
+    );
     String? nouvelId;
     try {
       final reponse = await clientTemporaire.auth.signUp(
@@ -124,13 +137,16 @@ class Api {
       nouvelId = reponse.user?.id;
       await clientTemporaire.auth.signOut();
     } on AuthException catch (e) {
-      await clientTemporaire.dispose();
       if (e.message.toLowerCase().contains('already')) {
         throw Exception('L’identifiant « $login » est déjà utilisé.');
       }
       throw Exception(e.message);
+    } finally {
+      // Dans un « finally » : sans cela, une erreur autre qu'une
+      // AuthException laissait le client et son isolate ouverts à
+      // chaque tentative ratée.
+      await clientTemporaire.dispose();
     }
-    await clientTemporaire.dispose();
 
     if (nouvelId == null) {
       throw Exception(

@@ -263,14 +263,27 @@ class Etat extends ChangeNotifier {
   }
 
   /// Exécute une écriture puis recharge, en rendant l'erreur lisible.
+  ///
+  /// Les deux temps sont séparés exprès. Quand ils partageaient le même
+  /// « try », un rechargement raté faisait passer une écriture réussie
+  /// pour un échec : la personne recommençait et créait un doublon, ou
+  /// se heurtait à « déjà utilisé » sans comprendre.
   Future<String?> agir(Future<void> Function() action) async {
     try {
       await action();
-      await rafraichir();
-      return null;
     } catch (e) {
       return _lisible(e);
     }
+
+    try {
+      await rafraichir();
+    } catch (_) {
+      erreur = 'C’est enregistré, mais la liste n’a pas pu être rechargée. '
+          'Tirez vers le bas pour la rafraîchir.';
+      chargement = false;
+      notifyListeners();
+    }
+    return null;
   }
 
   // ── Pointage ───────────────────────────────────────────────────────
