@@ -17,6 +17,10 @@ class Presence {
   static StreamSubscription<Position>? _flux;
   static Timer? _battement;
 
+  /// La sortie de zone n'est annoncée qu'une fois, même si le suivi
+  /// continue ensuite pendant deux heures pour tracer l'itinéraire.
+  static bool _sortieSignalee = false;
+
   /// Ce que la base a répondu au dernier envoi.
   static final ValueNotifier<String?> dernierMessage =
       ValueNotifier<String?>(null);
@@ -46,6 +50,7 @@ class Presence {
     required void Function(String message) surSortie,
   }) async {
     if (kIsWeb || _flux != null) return;
+    _sortieSignalee = false;
 
     final reglages = AndroidSettings(
       accuracy: LocationAccuracy.high,
@@ -94,9 +99,21 @@ class Presence {
           ? null
           : int.tryParse('${ligne['distance']}');
       dernierMessage.value = motif;
+
       if (!enLigne) {
-        await arreter();
-        surSortie(motif);
+        // La personne a quitté la ferme. On ne s'arrête PAS : la base
+        // garde une fenêtre de deux heures pendant laquelle chaque
+        // position devient un point de l'itinéraire que l'admin
+        // consultera. On n'avertit qu'une fois, et on ne raccroche que
+        // lorsque la base dit qu'il n'y a plus rien à suivre.
+        if (motif.startsWith('Aucun')) {
+          await arreter();
+          return;
+        }
+        if (!_sortieSignalee) {
+          _sortieSignalee = true;
+          surSortie(motif);
+        }
       }
     } catch (_) {
       // Réseau coupé : on ne fait rien. Si le silence dure, la base
@@ -105,6 +122,7 @@ class Presence {
   }
 
   static Future<void> arreter() async {
+    _sortieSignalee = false;
     await _flux?.cancel();
     _flux = null;
     _battement?.cancel();

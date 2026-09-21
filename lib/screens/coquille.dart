@@ -132,6 +132,12 @@ class _CoquilleState extends State<Coquille> with WidgetsBindingObserver {
                 Icons.vaccines_rounded, EcranSante()),
             Onglet('Photos', Icons.photo_library_outlined,
                 Icons.photo_library_rounded, EcranPhotos()),
+            // Les fermiers les envoyaient, le gérant les voyait, mais
+            // l'administrateur n'avait aucun onglet pour les lire.
+            Onglet('Signalements', Icons.warning_amber_rounded,
+                Icons.warning_rounded, EcranSignalements()),
+            Onglet('Rapports', Icons.description_outlined,
+                Icons.description_rounded, EcranRapports()),
           ],
         Role.gerant => const [
             Onglet('Accueil', Icons.dashboard_outlined,

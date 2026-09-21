@@ -55,7 +55,6 @@ class EcranRapports extends StatelessWidget {
   }
 
   Widget _carte(BuildContext context, Etat etat, Rapport r) {
-    final estLeMien = r.auteurId == etat.moi!.id;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Bloc(
@@ -83,7 +82,9 @@ class EcranRapports extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (estLeMien || etat.estAdmin || etat.estGerant)
+                // Un rapport envoyé est conservé : seul l'administrateur
+                // peut l'effacer.
+                if (etat.estAdmin)
                   IconButton(
                     visualDensity: VisualDensity.compact,
                     onPressed: () => _supprimer(context, etat, r),

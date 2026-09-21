@@ -17,7 +17,10 @@ class TableauBord extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final etat = context.watch<Etat>();
-    if (etat.chargement && etat.fermes.isEmpty) return const ChargementPage();
+    // On n'affiche la page d'attente qu'avant de savoir qui est là. Se
+    // baser sur la liste des fermes viderait l'écran à chaque
+    // rafraîchissement pour qui n'en voit aucune.
+    if (etat.chargement && etat.moi == null) return const ChargementPage();
 
     return RefreshIndicator(
       onRefresh: etat.rafraichir,

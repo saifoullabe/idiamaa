@@ -2,7 +2,6 @@ import 'dart:typed_data';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import '../core/config.dart';
 import '../core/constantes.dart';
 import '../core/format.dart';
 import '../models/modeles.dart';
@@ -101,9 +100,14 @@ class Api {
 
   /// Crée le compte de connexion PUIS sa fiche.
   ///
-  /// L'inscription passe par un client Supabase séparé : sans cela,
-  /// l'administrateur serait déconnecté et se retrouverait connecté
-  /// à la place de la personne qu'il vient de créer.
+  /// C'est la base qui crée le compte, déjà confirmé, et la fiche dans
+  /// le même mouvement : soit les deux existent, soit aucun des deux.
+  ///
+  /// Avant, l'application passait par la porte d'inscription publique.
+  /// Supabase envoyait alors un courriel de confirmation à une adresse
+  /// qui n'existe pas (12345678@idiamaa.com) : le compte était créé
+  /// mais verrouillé pour toujours — « création réussie, connexion
+  /// impossible ». Voir sql/12_idiama_securite.sql.
   static Future<void> creerUtilisateur({
     required String login,
     required String motDePasse,
@@ -113,63 +117,23 @@ class Api {
     String? fermeId,
     Map<String, dynamic> autresChamps = const {},
   }) async {
-    // AuthFlowType.implicit est indispensable ici. Un SupabaseClient
-    // construit à la main part en flux PKCE, qui exige un stockage
-    // local ; celui-ci vaut null. gotrue ne protège ce stockage que par
-    // un « assert », et les assert disparaissent dans un APK de
-    // production : à l'inscription, il plantait sur « Null check
-    // operator used on a null value ». Le flux PKCE ne sert qu'aux
-    // connexions par lien externe, dont ce client jetable n'a que faire.
-    final clientTemporaire = SupabaseClient(
-      Config.supabaseUrl,
-      Config.supabaseAnonKey,
-      authOptions: const AuthClientOptions(
-        authFlowType: AuthFlowType.implicit,
-        autoRefreshToken: false,
-      ),
-    );
-    String? nouvelId;
-    try {
-      final reponse = await clientTemporaire.auth.signUp(
-        email: Config.emailDe(login),
-        password: motDePasse,
-      );
-      nouvelId = reponse.user?.id;
-      await clientTemporaire.auth.signOut();
-    } on AuthException catch (e) {
-      if (e.message.toLowerCase().contains('already')) {
-        throw Exception('L’identifiant « $login » est déjà utilisé.');
-      }
-      throw Exception(e.message);
-    } finally {
-      // Dans un « finally » : sans cela, une erreur autre qu'une
-      // AuthException laissait le client et son isolate ouverts à
-      // chaque tentative ratée.
-      await clientTemporaire.dispose();
-    }
-
-    if (nouvelId == null) {
-      throw Exception(
-          'Le compte n’a pas pu être créé. Dans Supabase → Authentication → '
-          'Providers → Email, la case « Confirm email » doit être décochée.');
-    }
-
-    await _db.from('profils').insert({
-      'id': nouvelId,
-      'login': login.trim().toLowerCase(),
-      'nom': nom,
-      'prenom': prenom,
-      'role': role,
-      'ferme_id': fermeId,
-      ...autresChamps,
+    await _db.rpc('admin_creer_utilisateur', params: {
+      'p_login': login.trim().toLowerCase(),
+      'p_mot_de_passe': motDePasse,
+      'p_role': role,
+      'p_ferme': fermeId,
+      'p_champs': {'nom': nom, 'prenom': prenom, ...autresChamps},
     });
   }
 
   static Future<void> majProfil(String id, Map<String, dynamic> champs) =>
       _db.from('profils').update(champs).eq('id', id);
 
+  /// Efface la fiche ET le compte de connexion. Avant, seule la fiche
+  /// partait : le compte survivait sans fiche, donc avec le rôle
+  /// « aucun » — celui qui passait à travers les serrures.
   static Future<void> supprimerProfil(String id) =>
-      _db.from('profils').delete().eq('id', id);
+      _db.rpc('admin_supprimer_utilisateur', params: {'p_profil': id});
 
   static Future<void> changerMotDePasse(String nouveau) =>
       _db.auth.updateUser(UserAttributes(password: nouveau));
@@ -413,13 +377,16 @@ class Api {
   /// Le chemin parcouru pendant un pointage, du plus ancien au plus
   /// récent. Le suivi s'arrête deux heures après la sortie.
   static Future<List<Trajet>> trajets(String pointageId) async {
+    // Du plus RÉCENT au plus ancien avant la limite : sur une longue
+    // journée, ce sont les points d'après la sortie qui comptent, et
+    // l'ordre inverse les aurait coupés.
     final r = await _db
         .from('trajets')
         .select()
         .eq('pointage_id', pointageId)
-        .order('moment')
+        .order('moment', ascending: false)
         .limit(500);
-    return r.map<Trajet>((m) => Trajet.depuis(m)).toList();
+    return r.map<Trajet>((m) => Trajet.depuis(m)).toList().reversed.toList();
   }
 
   /// L'administrateur a vu la sortie : elle ne clignote plus.

@@ -148,8 +148,10 @@ class _EcranPhotosState extends State<EcranPhotos> {
                   ),
                 const SizedBox(height: 10),
                 GaleriePhotos(groupe.map((p) => p.url).toList()),
-                if (etat.estAdmin || etat.estGerant ||
-                    groupe.first.auteurId == etat.moi!.id)
+                // Une photo envoyée est conservée : seul l'administrateur
+                // peut l'effacer. Montrer le bouton aux autres donnerait
+                // une fausse confirmation, la base refusant sans bruit.
+                if (etat.estAdmin)
                   Align(
                     alignment: Alignment.centerRight,
                     child: TextButton.icon(
