@@ -356,9 +356,13 @@ class Etat extends ChangeNotifier {
     final sortie = monPointage != null;
     Position2? pos;
 
-    // On demande la position quand la ferme en a une d'enregistrée.
+    // Le fermier donne toujours sa position : soit elle est comparée au
+    // repère de la ferme, soit — la première fois — c'est elle qui le
+    // pose. Ne la demander que lorsque le repère existe déjà rendait ce
+    // tout premier pointage impossible.
     final f = maFerme;
-    if (f?.latitude != null && f?.longitude != null) {
+    if ((estFermier && f != null) ||
+        (f?.latitude != null && f?.longitude != null)) {
       pos = await Localisation.position();
       // À l'arrivée, pas de position = pas de pointage pour un fermier.
       if (!sortie && estFermier && !pos.utilisable) {
@@ -371,17 +375,24 @@ class Etat extends ChangeNotifier {
         await Api.pointerSortie(
             latitude: pos?.latitude, longitude: pos?.longitude);
       } else {
-        await Api.pointerArrivee(
-            latitude: pos?.latitude, longitude: pos?.longitude);
+        messagePointage = await Api.pointerArrivee(
+            latitude: pos?.latitude,
+            longitude: pos?.longitude,
+            precision: pos?.precisionMetres);
       }
     });
     if (erreur != null) return erreur;
 
     // Le suivi continu ne tourne que pendant le pointage d'un fermier
-    // sur une ferme dont la position est enregistrée.
+    // sur une ferme dont la position est enregistrée. On relit la ferme
+    // APRÈS l'enregistrement : si ce pointage vient de poser le repère,
+    // la copie prise avant ne le porte pas, et le suivi ne démarrerait
+    // pas le jour même — la base fermerait alors le pointage au bout de
+    // 30 minutes en croyant le téléphone muet.
+    final apres = maFerme;
     if (sortie) {
       await suivi.Presence.arreter();
-    } else if (estFermier && f?.latitude != null) {
+    } else if (estFermier && apres?.latitude != null) {
       await suivi.Presence.demarrer(surSortie: (motif) async {
         await rafraichir();
         messageSortieAuto = motif;
@@ -394,6 +405,11 @@ class Etat extends ChangeNotifier {
   /// Ce que la base a dit quand elle a mis quelqu'un hors ligne tout seul.
   /// L'écran le lit, l'affiche, puis le remet à null.
   String? messageSortieAuto;
+
+  /// Ce que la base a répondu au pointage d'arrivée. Sert surtout le
+  /// jour où ce pointage pose le repère de la ferme : la personne doit
+  /// savoir que sa position vient de devenir la référence.
+  String? messagePointage;
 
   /// Ferme les pointages dont le téléphone ne donne plus de nouvelles.
   /// Appelé au chargement par l'admin et le gérant : pas besoin de

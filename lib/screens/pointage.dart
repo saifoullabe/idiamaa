@@ -226,9 +226,14 @@ class _EcranPointageState extends State<EcranPointage> {
     final e = await etat.basculerPointage();
     if (!mounted) return;
     setState(() => _occupe = false);
+    // Le message de la base passe avant le nôtre : c'est lui qui dit, le
+    // premier jour, que cette position devient le repère de la ferme.
+    final dit = etat.messagePointage;
+    etat.messagePointage = null;
     message(
         context,
         e ??
+            dit ??
             (sortie
                 ? 'Sortie enregistrée — bonne fin de journée'
                 : 'Arrivée enregistrée — bonne journée'),

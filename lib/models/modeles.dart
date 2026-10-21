@@ -26,6 +26,13 @@ class Ferme {
   final double? longitude;
   final int rayonMetres;
 
+  /// Qui a posé le repère de la ferme. Vide quand c'est
+  /// l'administrateur ; renseigné quand c'est le premier pointage d'un
+  /// fermier — et dans ce cas il faut que l'administrateur regarde.
+  final String? positionPoseePar;
+  final DateTime? positionPoseeLe;
+  final bool positionConfirmee;
+
   Ferme.depuis(Map<String, dynamic> m)
       : id = _txt(m['id']),
         nom = _txt(m['nom']),
@@ -37,7 +44,11 @@ class Ferme {
         notes = _txt(m['notes']),
         latitude = m['latitude'] == null ? null : _dbl(m['latitude']),
         longitude = m['longitude'] == null ? null : _dbl(m['longitude']),
-        rayonMetres = m['rayon_metres'] == null ? 300 : _int(m['rayon_metres']);
+        rayonMetres = m['rayon_metres'] == null ? 300 : _int(m['rayon_metres']),
+        positionPoseePar = m['position_posee_par'] as String?,
+        positionPoseeLe = _date(m['position_posee_le']),
+        // Une clé absente ne doit pas faire croire que c'est confirmé.
+        positionConfirmee = m['position_confirmee'] == true;
 
   bool get suspendue => statut == 'Suspendue';
   bool get active => statut == 'Actif';

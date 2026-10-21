@@ -411,6 +411,17 @@ Future<void> formulaireFerme(BuildContext context, {Ferme? ferme}) async {
   double? latitude = ferme?.latitude;
   double? longitude = ferme?.longitude;
   var recherche = false;
+  // La position ne part QUE si on y a touché. Sinon, ouvrir cette
+  // fenêtre pour changer le nom renvoyait la position telle qu'elle
+  // était au chargement de la liste — effaçant le repère qu'un fermier
+  // venait de poser, et le marquant « vérifié » au passage.
+  var positionTouchee = false;
+  final latTexte =
+      TextEditingController(text: ferme?.latitude?.toStringAsFixed(6) ?? '');
+  final lonTexte =
+      TextEditingController(text: ferme?.longitude?.toStringAsFixed(6) ?? '');
+  final latDepart = latTexte.text;
+  final lonDepart = lonTexte.text;
 
   final ok = await ouvrirFormulaire(
     context,
@@ -476,6 +487,9 @@ Future<void> formulaireFerme(BuildContext context, {Ferme? ferme}) async {
                     if (p.utilisable) {
                       latitude = p.latitude;
                       longitude = p.longitude;
+                      positionTouchee = true;
+                      latTexte.text = p.latitude!.toStringAsFixed(6);
+                      lonTexte.text = p.longitude!.toStringAsFixed(6);
                       if (c.mounted) {
                         message(
                             c,
@@ -504,12 +518,36 @@ Future<void> formulaireFerme(BuildContext context, {Ferme? ferme}) async {
             onPressed: () {
               latitude = null;
               longitude = null;
+              positionTouchee = true;
+              latTexte.clear();
+              lonTexte.clear();
               rafraichir();
             },
             icon: const Icon(Icons.delete_outline_rounded, size: 18),
             label: const Text('Retirer'),
           ),
         ],
+      ]),
+      const SizedBox(height: 12),
+      // Saisie à la main : c'est le seul moyen de corriger un repère
+      // depuis Conakry, sans aller sur place. Un point relevé sur une
+      // carte se recopie ici.
+      Row(children: [
+        Expanded(
+          child: ChampTexte(latTexte,
+              libelle: 'Latitude',
+              indice: 'ex : 9.64100',
+              clavier: const TextInputType.numberWithOptions(
+                  decimal: true, signed: true)),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: ChampTexte(lonTexte,
+              libelle: 'Longitude',
+              indice: 'ex : -13.57800',
+              clavier: const TextInputType.numberWithOptions(
+                  decimal: true, signed: true)),
+        ),
       ]),
       const SizedBox(height: 14),
       ChampNombre(rayon,
@@ -538,6 +576,33 @@ Future<void> formulaireFerme(BuildContext context, {Ferme? ferme}) async {
     enregistrer: () async {
       if (nom.text.trim().isEmpty) return 'Le nom de la ferme est obligatoire.';
       if (ville.text.trim().isEmpty) return 'La ville est obligatoire.';
+      // Les deux champs font foi : ils sont remplis par le bouton GPS,
+      // ou tapés à la main pour corriger à distance.
+      final latSaisie = latTexte.text.trim().replaceAll(',', '.');
+      final lonSaisie = lonTexte.text.trim().replaceAll(',', '.');
+      if (latSaisie != latDepart || lonSaisie != lonDepart) {
+        positionTouchee = true;
+      }
+      if (latSaisie.isEmpty != lonSaisie.isEmpty) {
+        return 'Donnez la latitude ET la longitude, ou laissez les deux vides.';
+      }
+      if (latSaisie.isEmpty) {
+        latitude = null;
+        longitude = null;
+      } else {
+        final la = double.tryParse(latSaisie);
+        final lo = double.tryParse(lonSaisie);
+        if (la == null || lo == null) {
+          return 'Latitude et longitude doivent être des nombres.';
+        }
+        if (la < -90 || la > 90 || lo < -180 || lo > 180) {
+          return 'Coordonnées hors limites : latitude entre -90 et 90, '
+              'longitude entre -180 et 180.';
+        }
+        latitude = la;
+        longitude = lo;
+      }
+
       final rayonM = int.tryParse(rayon.text) ?? 300;
       if (latitude != null && rayonM < 50) {
         return 'Un rayon de moins de 50 m est inutilisable : le GPS seul se '
@@ -549,10 +614,12 @@ Future<void> formulaireFerme(BuildContext context, {Ferme? ferme}) async {
         'adresse': adresse.text.trim(),
         'notes': notes.text.trim(),
         'statut': statut,
-        'latitude': latitude,
-        'longitude': longitude,
         'rayon_metres': rayonM,
       };
+      if (positionTouchee) {
+        champs['latitude'] = latitude;
+        champs['longitude'] = longitude;
+      }
       return etat.agir(() async {
         if (ferme == null) {
           await Api.creerFerme(

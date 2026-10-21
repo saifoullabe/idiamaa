@@ -342,12 +342,18 @@ class Api {
   /// C'est la base qui décide si le pointage est accepté : elle vérifie
   /// la distance à la ferme. Un téléphone modifié qui appellerait l'API
   /// directement se ferait refuser de la même façon.
-  static Future<void> pointerArrivee(
-      {double? latitude, double? longitude}) async {
-    await _db.rpc('pointer_arrivee', params: {
+  /// Rend le message de la base. Le jour où ce pointage pose le repère
+  /// de la ferme, elle le dit — et la personne doit le lire.
+  static Future<String?> pointerArrivee(
+      {double? latitude, double? longitude, double? precision}) async {
+    final r = await _db.rpc('pointer_arrivee', params: {
       'p_latitude': latitude,
       'p_longitude': longitude,
+      'p_precision': precision,
     });
+    if (r is! List || r.isEmpty) return null;
+    final m = '${(r.first as Map)['message'] ?? ''}';
+    return m.isEmpty ? null : m;
   }
 
   /// Ferme les pointages dont le telephone ne donne plus signe de vie.
@@ -363,6 +369,11 @@ class Api {
       'p_auto': auto,
     });
   }
+
+  /// L'administrateur dit « j'ai regardé, le repère est au bon endroit ».
+  /// Cela ne déplace rien : pour corriger, on repasse par la fiche.
+  static Future<void> confirmerPosition(String fermeId) =>
+      _db.rpc('admin_confirmer_position', params: {'p_ferme': fermeId});
 
   // ── SORTIES DE ZONE ET ITINÉRAIRE ──────────────────────────────────
   /// Les fois où quelqu'un a quitté sa ferme pendant qu'il était en

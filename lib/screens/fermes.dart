@@ -132,6 +132,16 @@ class CarteFerme extends StatelessWidget {
                     ? 'Aucun'
                     : fermiers.map((f) => f.nomComplet).join(' · '),
                 icone: Icons.agriculture_outlined),
+            LigneInfo(
+                'Repère de présence',
+                ferme.latitude == null
+                    ? 'Pas encore posé — le premier pointage le posera'
+                    : '${ferme.latitude!.toStringAsFixed(5)}, '
+                        '${ferme.longitude!.toStringAsFixed(5)} · '
+                        '${ferme.rayonMetres} m',
+                icone: Icons.my_location_outlined),
+            if (ferme.latitude != null && !ferme.positionConfirmee)
+              _repereAVerifier(context, etat, ferme),
           ]),
         ),
 
@@ -242,6 +252,34 @@ class CarteFerme extends StatelessWidget {
           ),
         ),
       ]),
+    );
+  }
+
+  /// Le repère a été posé par le premier pointage d'un fermier, pas par
+  /// l'administrateur. Tant qu'il n'est pas vérifié, le contrôle de
+  /// présence ne prouve rien : on le dit, et on propose les deux gestes.
+  Widget _repereAVerifier(BuildContext context, Etat etat, Ferme f) {
+    final qui = etat.personnes
+        .cast<Profil?>()
+        .firstWhere((p) => p?.id == f.positionPoseePar, orElse: () => null);
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Bandeau(
+        titre: 'Repère à vérifier',
+        texte: '${qui?.nomComplet ?? 'Quelqu’un'} l’a posé en pointant son '
+            'arrivée le ${jourMois(f.positionPoseeLe)}. Si le point est bien '
+            'à la ferme, confirmez-le ; sinon, corrigez-le depuis Modifier.',
+        couleur: Palette.orFonce,
+        icone: Icons.wrong_location_outlined,
+        action: FilledButton(
+          onPressed: () async {
+            final erreur = await etat.agir(() => Api.confirmerPosition(f.id));
+            if (!context.mounted) return;
+            message(context, erreur ?? 'Repère confirmé', erreur: erreur != null);
+          },
+          child: const Text('Confirmer'),
+        ),
+      ),
     );
   }
 

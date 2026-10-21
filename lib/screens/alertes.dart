@@ -422,6 +422,30 @@ class EcranAlertes extends StatelessWidget {
       }
     }
 
+    // ── 7 bis. Une position de ferme posée par un fermier ──
+    if (etat.estAdmin) {
+      for (final f in etat.fermes.where(
+          (f) => f.latitude != null && !f.positionConfirmee)) {
+        final qui = etat.personnes
+            .cast<Profil?>()
+            .firstWhere((p) => p?.id == f.positionPoseePar, orElse: () => null);
+        liste.add(Alerte(
+          Gravite.attention,
+          Icons.wrong_location_outlined,
+          'Repère à vérifier — ${f.nom}',
+          '${qui?.nomComplet ?? 'Quelqu’un'} a posé le repère de cette ferme '
+              'le ${jourMois(f.positionPoseeLe)} à ${heure(f.positionPoseeLe)}, '
+              'en pointant son arrivée. Tous les pointages suivants sont '
+              'comparés à ce point.',
+          conseil:
+              'Ouvrez la fiche de la ferme : si le point est au bon endroit, '
+              'confirmez-le. S’il a été posé ailleurs qu’à la ferme, '
+              'corrigez-le — tant qu’il est faux, le contrôle de présence '
+              'ne vaut rien.',
+        ));
+      }
+    }
+
     // ── 8. Quelqu'un a quitté sa ferme en cours de pointage ──
     if (etat.estAdmin || etat.estGerant) {
       final neuves = etat.sorties.where((s) => !s.vuParAdmin).toList();
