@@ -110,7 +110,17 @@ class Etat extends ChangeNotifier {
 
   Future<void> reprendreSession() async {
     if (Supabase.instance.client.auth.currentUser == null) return;
-    final profil = await Api.monProfil();
+    Profil? profil;
+    try {
+      profil = await Api.monProfil().timeout(const Duration(seconds: 20));
+    } catch (e) {
+      // Pas de réseau au démarrage : on ne déconnecte pas. Déconnecter
+      // ici obligerait à retaper son mot de passe dans une zone où le
+      // réseau manque justement — exactement au mauvais moment.
+      erreur = 'Pas de connexion. Réessayez quand le réseau revient.';
+      notifyListeners();
+      return;
+    }
     if (profil == null) {
       await deconnexion();
       return;
@@ -164,10 +174,16 @@ class Etat extends ChangeNotifier {
     final manquants = <String>[];
     int tentees = 0, echouees = 0;
 
-    Future<T> lire<T>(String quoi, Future<T> Function() requete, T repli) async {
+    // « actuel » est ce qui est déjà affiché. En cas d'échec réseau on le
+    // garde : avant, un rafraîchissement raté vidait l'écran et le fermier
+    // croyait ses saisies perdues.
+    Future<T> lire<T>(String quoi, Future<T> Function() requete, T repli,
+        {T? actuel}) async {
       tentees++;
       try {
-        return await requete();
+        // Sans délai, une requête partie sur un réseau qui ne répond plus
+        // laisse l'application tourner indéfiniment sur son sablier.
+        return await requete().timeout(const Duration(seconds: 25));
       } catch (e) {
         echouees++;
         final t = e.toString();
@@ -175,37 +191,57 @@ class Etat extends ChangeNotifier {
         // lancé : on le nomme, c'est réparable en une minute.
         if (t.contains('PGRST205') || t.contains('does not exist')) {
           manquants.add(quoi);
+          // La table n'existe pas : garder l'ancien contenu induirait en
+          // erreur, on rend bien le repli vide.
+          return repli;
         }
-        return repli;
+        return actuel ?? repli;
       }
     }
 
     final resultats = await Future.wait<dynamic>([
-      lire('fermes', Api.fermes, <Ferme>[]),
-      lire('profils', () => Api.profils(complet: estAdmin), <Profil>[]),
-      lire('bâtiments', () => Api.batiments(fermeId: portee), <Batiment>[]),
-      lire('recettes', () => Api.recettes(fermeId: portee), <Recette>[]),
-      lire('dépenses', () => Api.depenses(fermeId: portee), <Depense>[]),
+      lire('fermes', Api.fermes, <Ferme>[], actuel: fermes),
+      lire('profils', () => Api.profils(complet: estAdmin), <Profil>[],
+          actuel: personnes),
+      lire('bâtiments', () => Api.batiments(fermeId: portee), <Batiment>[],
+          actuel: batiments),
+      lire('recettes', () => Api.recettes(fermeId: portee), <Recette>[],
+          actuel: recettes),
+      lire('dépenses', () => Api.depenses(fermeId: portee), <Depense>[],
+          actuel: depenses),
       lire('productions', () => Api.productions(fermeId: portee),
-          <Production>[]),
-      lire('dépôts', () => Api.depots(fermeId: portee), <Depot>[]),
-      lire('stocks', () => Api.stocks(fermeId: portee), <Stock>[]),
+          <Production>[], actuel: productions),
+      lire('dépôts', () => Api.depots(fermeId: portee), <Depot>[],
+          actuel: depots),
+      lire('stocks', () => Api.stocks(fermeId: portee), <Stock>[],
+          actuel: stocks),
       lire('signalements', () => Api.signalements(fermeId: portee),
-          <Signalement>[]),
-      lire('rapports', () => Api.rapports(fermeId: portee), <Rapport>[]),
-      lire('pointages', () => Api.pointages(fermeId: portee), <Pointage>[]),
-      lire('présences', Api.pointagesEnCours, <Pointage>[]),
-      lire('mon pointage', () => Api.pointageEnCours(moi!.id), null),
-      lire('photos', () => Api.photos(fermeId: portee), <Photo>[]),
-      lire('clients', () => Api.clients(fermeId: portee), <Client>[]),
-      lire('ventes', () => Api.ventes(fermeId: portee), <Vente>[]),
-      lire('mortalités', () => Api.mortalites(fermeId: portee), <Mortalite>[]),
+          <Signalement>[], actuel: signalements),
+      lire('rapports', () => Api.rapports(fermeId: portee), <Rapport>[],
+          actuel: rapports),
+      lire('pointages', () => Api.pointages(fermeId: portee), <Pointage>[],
+          actuel: pointages),
+      lire('présences', Api.pointagesEnCours, <Pointage>[],
+          actuel: pointagesEnCours),
+      // Le pointage décide si le fermier peut saisir : une coupure réseau
+      // ne doit surtout pas le faire passer pour hors ligne.
+      lire('mon pointage', () => Api.pointageEnCours(moi!.id), null,
+          actuel: monPointage),
+      lire('photos', () => Api.photos(fermeId: portee), <Photo>[],
+          actuel: photos),
+      lire('clients', () => Api.clients(fermeId: portee), <Client>[],
+          actuel: clients),
+      lire('ventes', () => Api.ventes(fermeId: portee), <Vente>[],
+          actuel: ventes),
+      lire('mortalités', () => Api.mortalites(fermeId: portee), <Mortalite>[],
+          actuel: mortalites),
       lire('vaccinations', () => Api.vaccinations(fermeId: portee),
-          <Vaccination>[]),
-      lire('articles', Api.articlesPerso, <String, List<String>>{}),
-      lire('mon profil', Api.monProfil, null),
+          <Vaccination>[], actuel: vaccinations),
+      lire('articles', Api.articlesPerso, <String, List<String>>{},
+          actuel: articlesPerso),
+      lire('mon profil', Api.monProfil, null, actuel: moi),
       lire('sorties de zone', () => Api.sorties(fermeId: portee),
-          <SortieZone>[]),
+          <SortieZone>[], actuel: sorties),
     ]);
 
     fermes = resultats[0] as List<Ferme>;
@@ -251,10 +287,20 @@ class Etat extends ChangeNotifier {
 
   static String _lisible(Object e) {
     final t = e.toString();
-    if (t.contains('SocketException') ||
-        t.contains('Failed host lookup') ||
-        t.contains('ClientException')) {
-      return 'Pas de connexion internet. Les données affichées peuvent dater.';
+    // Le nom du serveur n'a même pas pu être résolu : la requête n'est
+    // jamais partie, on peut réessayer sans risque de doublon.
+    if (t.contains('Failed host lookup')) {
+      return 'Pas de connexion internet. Rien n’a été envoyé, '
+          'vous pouvez réessayer.';
+    }
+    // Coupure PENDANT l'envoi, ou délai dépassé : le serveur a peut-être
+    // tout reçu. On ne dit jamais « échec » sans cet avertissement.
+    if (e is TimeoutException ||
+        t.contains('TimeoutException') ||
+        t.contains('ClientException') ||
+        t.contains('SocketException')) {
+      return 'Le réseau a coupé pendant l’envoi. Regardez la liste avant '
+          'de ressaisir : l’enregistrement est peut-être passé.';
     }
     if (t.contains('row-level security') || t.contains('violates')) {
       return 'Action refusée : vous n’avez pas le droit de faire cela.';
@@ -270,9 +316,23 @@ class Etat extends ChangeNotifier {
   /// se heurtait à « déjà utilisé » sans comprendre.
   Future<String?> agir(Future<void> Function() action) async {
     try {
-      await action();
+      // Large, car une saisie peut emporter une vidéo. Mais borné : sans
+      // cela, le bouton Enregistrer tourne sans fin et la personne finit
+      // par ressaisir, créant un doublon.
+      await action().timeout(const Duration(minutes: 3));
     } catch (e) {
-      return _lisible(e);
+      final message = _lisible(e);
+      // Le délai n'annule pas l'envoi déjà parti : l'écriture est
+      // peut-être passée. On recharge donc quand même, pour que la
+      // personne VOIE si c'est enregistré au lieu de ressaisir et de
+      // créer un doublon.
+      try {
+        await rafraichir();
+      } catch (_) {}
+      erreur = message;
+      chargement = false;
+      notifyListeners();
+      return message;
     }
 
     try {
@@ -341,7 +401,11 @@ class Etat extends ChangeNotifier {
   Future<void> fermerPointagesMuets() async {
     if (!estAdmin && !estGerant) return;
     try {
-      await Api.fermerPointagesMuets();
+      // Borné : ce ménage précède les 21 lectures. Sans délai, un réseau
+      // qui accepte la connexion sans jamais répondre bloquait ici — et
+      // le bouton de rafraîchissement étant désactivé pendant le
+      // chargement, il ne restait qu'à tuer l'application.
+      await Api.fermerPointagesMuets().timeout(const Duration(seconds: 15));
     } catch (_) {}
   }
 

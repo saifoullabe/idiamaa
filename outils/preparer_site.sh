@@ -17,7 +17,12 @@ cd "$(dirname "$0")/.."
 echo "→ Compilation de la version web…"
 # L'application vit sous /app/ : la racine est réservée à la page
 # d'accueil, qui doit s'ouvrir même sur une connexion faible.
-MSYS_NO_PATHCONV=1 flutter build web --release --base-href /app/
+# --no-web-resources-cdn : sans ce drapeau, le navigateur va chercher le
+# moteur graphique CanvasKit (1,2 Mo) sur gstatic.com, un serveur de
+# Google. En Guinée, il est lent et parfois injoignable : la page tourne
+# alors indéfiniment alors que tout le reste est déjà arrivé. Avec le
+# drapeau, le moteur est servi depuis idiamaa.com, comme le reste.
+MSYS_NO_PATHCONV=1 flutter build web --release --base-href /app/ --no-web-resources-cdn
 
 echo "→ Recopie dans site/"
 rm -rf site

@@ -74,6 +74,7 @@ class _EcranConnexionState extends State<EcranConnexion> {
 
   @override
   Widget build(BuildContext context) {
+    final messageEtat = context.watch<Etat>().erreur;
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
@@ -105,7 +106,13 @@ class _EcranConnexionState extends State<EcranConnexion> {
                           const SizedBox(height: 22),
                           _onglets(),
                           const SizedBox(height: 20),
-                          if (_erreur != null) _messageErreur(),
+                          // L'erreur de l'écran, ou celle qui vient de
+                          // l'application elle-même (réseau coupé au
+                          // démarrage) : sinon le message n'était affiché
+                          // nulle part et la personne ne savait pas
+                          // pourquoi on lui redemandait son mot de passe.
+                          if (_erreur != null || messageEtat != null)
+                            _messageErreur(_erreur ?? messageEtat!),
                           _libelle('Identifiant'),
                           TextFormField(
                             controller: _login,
@@ -309,7 +316,7 @@ class _EcranConnexionState extends State<EcranConnexion> {
         ),
       ]);
 
-  Widget _messageErreur() => Container(
+  Widget _messageErreur(String texte) => Container(
         width: double.infinity,
         margin: const EdgeInsets.only(bottom: 16),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -323,7 +330,7 @@ class _EcranConnexionState extends State<EcranConnexion> {
               color: Palette.rouge, size: 19),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(_erreur!,
+            child: Text(texte,
                 style: const TextStyle(
                     color: Palette.rouge,
                     fontSize: 12.5,
