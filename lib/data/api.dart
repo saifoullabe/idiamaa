@@ -375,6 +375,115 @@ class Api {
   static Future<void> confirmerPosition(String fermeId) =>
       _db.rpc('admin_confirmer_position', params: {'p_ferme': fermeId});
 
+  // ── LECTURES BORNÉES PAR UNE PÉRIODE (le relevé de compte) ─────────
+  //
+  // Les listes de l'écran sont plafonnées par le serveur : 200 pointages,
+  // 500 ventes… Un relevé trimestriel ou annuel fabriqué à partir
+  // d'elles serait silencieusement incomplet — « 8 jours pointés » pour
+  // une année. Le relevé relit donc la base, bornée par ses dates.
+  //
+  // `debut` est inclus, `fin` exclu : on passe le premier jour de la
+  // période suivante, ce qui évite d'oublier le dernier jour.
+
+  static Future<List<Recette>> recettesEntre(
+      {String? fermeId, required DateTime debut, required DateTime fin}) async {
+    var q = _db.from('recettes').select();
+    if (fermeId != null) q = q.eq('ferme_id', fermeId);
+    final r = await q.gte('date', iso(debut)).lt('date', iso(fin)).limit(20000);
+    return r.map<Recette>((m) => Recette.depuis(m)).toList();
+  }
+
+  static Future<List<Depense>> depensesEntre(
+      {String? fermeId, required DateTime debut, required DateTime fin}) async {
+    var q = _db.from('depenses').select();
+    if (fermeId != null) q = q.eq('ferme_id', fermeId);
+    final r = await q.gte('date', iso(debut)).lt('date', iso(fin)).limit(20000);
+    return r.map<Depense>((m) => Depense.depuis(m)).toList();
+  }
+
+  static Future<List<Depot>> depotsEntre(
+      {String? fermeId, required DateTime debut, required DateTime fin}) async {
+    var q = _db.from('depots').select();
+    if (fermeId != null) q = q.eq('ferme_id', fermeId);
+    final r = await q.gte('date', iso(debut)).lt('date', iso(fin)).limit(20000);
+    return r.map<Depot>((m) => Depot.depuis(m)).toList();
+  }
+
+  static Future<List<Production>> productionsEntre(
+      {String? fermeId, required DateTime debut, required DateTime fin}) async {
+    var q = _db.from('productions').select();
+    if (fermeId != null) q = q.eq('ferme_id', fermeId);
+    final r = await q.gte('date', iso(debut)).lt('date', iso(fin)).limit(20000);
+    return r.map<Production>((m) => Production.depuis(m)).toList();
+  }
+
+  static Future<List<Vente>> ventesEntre(
+      {String? fermeId, required DateTime debut, required DateTime fin}) async {
+    var q = _db.from('ventes').select();
+    if (fermeId != null) q = q.eq('ferme_id', fermeId);
+    final r = await q.gte('date', iso(debut)).lt('date', iso(fin)).limit(20000);
+    return r.map<Vente>((m) => Vente.depuis(m)).toList();
+  }
+
+  static Future<List<Mortalite>> mortalitesEntre(
+      {String? fermeId, required DateTime debut, required DateTime fin}) async {
+    var q = _db.from('mortalites').select();
+    if (fermeId != null) q = q.eq('ferme_id', fermeId);
+    final r = await q.gte('date', iso(debut)).lt('date', iso(fin)).limit(20000);
+    return r.map<Mortalite>((m) => Mortalite.depuis(m)).toList();
+  }
+
+  // Les pointages et les sorties portent un instant, pas une date : on
+  // compare donc en temps universel, sinon le fuseau ferait basculer le
+  // premier et le dernier jour dans la mauvaise période.
+  static Future<List<Pointage>> pointagesEntre(
+      {String? fermeId, required DateTime debut, required DateTime fin}) async {
+    var q = _db.from('pointages').select();
+    if (fermeId != null) q = q.eq('ferme_id', fermeId);
+    final r = await q
+        .gte('debut', debut.toUtc().toIso8601String())
+        .lt('debut', fin.toUtc().toIso8601String())
+        .limit(20000);
+    return r.map<Pointage>((m) => Pointage.depuis(m)).toList();
+  }
+
+  static Future<List<SortieZone>> sortiesEntre(
+      {String? fermeId, required DateTime debut, required DateTime fin}) async {
+    var q = _db.from('sorties_zone').select();
+    if (fermeId != null) q = q.eq('ferme_id', fermeId);
+    final r = await q
+        .gte('moment', debut.toUtc().toIso8601String())
+        .lt('moment', fin.toUtc().toIso8601String())
+        .limit(20000);
+    return r.map<SortieZone>((m) => SortieZone.depuis(m)).toList();
+  }
+
+  /// Ce qui était validé AVANT la période : le solde d'ouverture. Sans
+  /// lui, deux relevés de deux mois consécutifs ne se raccordent pas.
+  static Future<List<Recette>> recettesAvant(
+      {String? fermeId, required DateTime fin}) async {
+    var q = _db.from('recettes').select();
+    if (fermeId != null) q = q.eq('ferme_id', fermeId);
+    final r = await q.lt('date', iso(fin)).eq('statut', Statut.valide).limit(20000);
+    return r.map<Recette>((m) => Recette.depuis(m)).toList();
+  }
+
+  static Future<List<Depense>> depensesAvant(
+      {String? fermeId, required DateTime fin}) async {
+    var q = _db.from('depenses').select();
+    if (fermeId != null) q = q.eq('ferme_id', fermeId);
+    final r = await q.lt('date', iso(fin)).eq('statut', Statut.valide).limit(20000);
+    return r.map<Depense>((m) => Depense.depuis(m)).toList();
+  }
+
+  static Future<List<Depot>> depotsAvant(
+      {String? fermeId, required DateTime fin}) async {
+    var q = _db.from('depots').select();
+    if (fermeId != null) q = q.eq('ferme_id', fermeId);
+    final r = await q.lt('date', iso(fin)).eq('statut', Statut.valide).limit(20000);
+    return r.map<Depot>((m) => Depot.depuis(m)).toList();
+  }
+
   // ── SORTIES DE ZONE ET ITINÉRAIRE ──────────────────────────────────
   /// Les fois où quelqu'un a quitté sa ferme pendant qu'il était en
   /// ligne. C'est la base qui les écrit, pendant le suivi.

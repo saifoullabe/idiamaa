@@ -4,6 +4,7 @@ import 'package:printing/printing.dart';
 
 import '../models/modeles.dart';
 import 'format.dart';
+import 'polices.dart';
 
 /// Les factures et relevés d'IDIAMA, en PDF.
 /// Le document est fabriqué sur le téléphone : il part par WhatsApp,
@@ -22,7 +23,7 @@ class Facture {
     required String villeFerme,
     required String vendeur,
   }) async {
-    final doc = pw.Document();
+    final doc = pw.Document(theme: await Polices.theme());
 
     doc.addPage(
       pw.Page(
@@ -66,7 +67,7 @@ class Facture {
     required String nomFerme,
     required String villeFerme,
   }) async {
-    final doc = pw.Document();
+    final doc = pw.Document(theme: await Polices.theme());
     final total = ventes.fold<int>(0, (s, v) => s + v.montant);
     final impaye = ventes
         .where((v) => !v.paye)

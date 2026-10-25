@@ -22,6 +22,7 @@ import 'presences.dart';
 import 'productions.dart';
 import 'rapport_global.dart';
 import 'rapports.dart';
+import 'releve.dart';
 import 'sante.dart';
 import 'recettes.dart';
 import 'signalements.dart';
@@ -138,6 +139,8 @@ class _CoquilleState extends State<Coquille> with WidgetsBindingObserver {
                 Icons.warning_rounded, EcranSignalements()),
             Onglet('Rapports', Icons.description_outlined,
                 Icons.description_rounded, EcranRapports()),
+            Onglet('Relevé', Icons.summarize_outlined,
+                Icons.summarize_rounded, EcranReleve()),
           ],
         Role.gerant => const [
             Onglet('Accueil', Icons.dashboard_outlined,
@@ -172,6 +175,8 @@ class _CoquilleState extends State<Coquille> with WidgetsBindingObserver {
                 Icons.vaccines_rounded, EcranSante()),
             Onglet('Photos', Icons.photo_library_outlined,
                 Icons.photo_library_rounded, EcranPhotos()),
+            Onglet('Relevé', Icons.summarize_outlined,
+                Icons.summarize_rounded, EcranReleve()),
           ],
         _ => const [
             Onglet('Accueil', Icons.dashboard_outlined,
@@ -196,6 +201,8 @@ class _CoquilleState extends State<Coquille> with WidgetsBindingObserver {
                 Icons.vaccines_rounded, EcranSante()),
             Onglet('Photos', Icons.photo_library_outlined,
                 Icons.photo_library_rounded, EcranPhotos()),
+            Onglet('Relevé', Icons.summarize_outlined,
+                Icons.summarize_rounded, EcranReleve()),
           ],
       };
 
