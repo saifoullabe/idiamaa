@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../widgets/image_protegee.dart';
+
 import '../core/constantes.dart';
 import '../core/format.dart';
 import '../core/theme.dart';
@@ -498,7 +500,7 @@ class _EcranDepotsState extends State<EcranDepots> {
           ),
           Flexible(
             child: InteractiveViewer(
-              child: Image.network(url,
+              child: ImageProtegee(url,
                   errorBuilder: (_, __, ___) => const Padding(
                         padding: EdgeInsets.all(30),
                         child: Vide('Impossible d’afficher ce fichier',

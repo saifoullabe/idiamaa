@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'image_protegee.dart';
+
 import '../core/constantes.dart';
 import '../core/format.dart';
 import '../core/theme.dart';
@@ -505,7 +507,7 @@ class Pastille extends StatelessWidget {
     final c = couleur ?? Palette.vert;
     if (photoUrl != null && photoUrl!.isNotEmpty) {
       return ClipOval(
-        child: Image.network(photoUrl!,
+        child: ImageProtegee(photoUrl!,
             width: taille,
             height: taille,
             fit: BoxFit.cover,

@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
 
+import '../data/lien_fichier.dart';
+
+import 'image_protegee.dart';
+
 import '../core/theme.dart';
 import '../data/api.dart';
 import 'communs.dart';
@@ -57,7 +61,7 @@ class GaleriePhotos extends StatelessWidget {
                         ],
                       ),
                     )
-                  : Image.network(
+                  : ImageProtegee(
                       urls[i],
                       width: taille,
                       height: taille,
@@ -128,7 +132,7 @@ class _VisionneuseState extends State<_Visionneuse> {
                   minScale: 1,
                   maxScale: 5,
                   child: Center(
-                    child: Image.network(
+                    child: ImageProtegee(
                       widget.urls[i],
                       fit: BoxFit.contain,
                       loadingBuilder: (c, enfant, avancement) =>
@@ -194,14 +198,24 @@ class _LecteurVideoState extends State<_LecteurVideo> {
   @override
   void initState() {
     super.initState();
-    final c = VideoPlayerController.networkUrl(Uri.parse(widget.url));
-    _lecteur = c;
-    c.initialize().then((_) {
-      if (mounted) setState(() {});
-      c.play();
-    }).catchError((e) {
+    _ouvrir();
+  }
+
+  /// Le coffre n'est plus public : il faut demander une adresse signée
+  /// avant de lancer la lecture, sinon le serveur refuse la vidéo.
+  Future<void> _ouvrir() async {
+    try {
+      final adresse = await LienFichier.affichable(widget.url);
+      if (!mounted) return;
+      final c = VideoPlayerController.networkUrl(Uri.parse(adresse));
+      _lecteur = c;
+      await c.initialize();
+      if (!mounted) return;
+      setState(() {});
+      await c.play();
+    } catch (_) {
       if (mounted) setState(() => _erreur = 'Vidéo illisible');
-    });
+    }
   }
 
   @override

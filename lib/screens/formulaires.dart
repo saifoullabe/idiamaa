@@ -14,6 +14,7 @@ import '../models/modeles.dart';
 import '../widgets/communs.dart';
 import '../widgets/formulaire.dart';
 import '../widgets/photos.dart';
+import '../widgets/image_protegee.dart';
 
 /// Vérifie qu'on a le droit de saisir avant d'ouvrir un formulaire.
 bool _autorise(BuildContext context, Etat etat) {
@@ -2067,16 +2068,19 @@ Widget _selecteurPhoto(BuildContext context, FichierChoisi? photo,
             image: photo != null
                 ? DecorationImage(
                     image: MemoryImage(photo.octets), fit: BoxFit.cover)
-                : (urlExistante != null && urlExistante.isNotEmpty
-                    ? DecorationImage(
-                        image: NetworkImage(urlExistante), fit: BoxFit.cover)
-                    : null),
+                : null,
           ),
-          child: (photo == null &&
-                  (urlExistante == null || urlExistante.isEmpty))
-              ? Icon(Icons.add_a_photo_outlined,
-                  size: 30, color: Theme.of(context).colorScheme.primary)
-              : null,
+          // La photo déjà envoyée passe par le coffre, qui n'est plus
+          // public : elle a besoin d'une adresse signée, donc d'un
+          // widget et non d'une simple décoration.
+          child: photo != null
+              ? null
+              : (urlExistante != null && urlExistante.isNotEmpty
+                  ? ClipOval(
+                      child: ImageProtegee(urlExistante,
+                          width: 110, height: 110, fit: BoxFit.cover))
+                  : Icon(Icons.add_a_photo_outlined,
+                      size: 30, color: Theme.of(context).colorScheme.primary)),
         ),
       ),
       const SizedBox(height: 8),

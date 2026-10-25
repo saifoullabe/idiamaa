@@ -9,6 +9,7 @@ import '../core/format.dart';
 import '../core/localisation.dart';
 import '../models/modeles.dart';
 import 'api.dart';
+import 'lien_fichier.dart';
 import 'presence.dart' as suivi;
 
 /// L'état de l'application : qui est connecté, et tout ce qu'il a le
@@ -132,6 +133,9 @@ class Etat extends ChangeNotifier {
 
   Future<void> deconnexion() async {
     await Supabase.instance.client.auth.signOut();
+    // Les adresses signées d'une personne n'ont rien à faire en mémoire
+    // quand une autre se connecte sur le même téléphone.
+    LienFichier.oublier();
     moi = null;
     fermes = [];
     personnes = [];
