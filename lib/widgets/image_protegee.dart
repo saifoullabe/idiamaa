@@ -51,6 +51,13 @@ class _ImageProtegeeState extends State<ImageProtegee> {
     }
   }
 
+  /// Une seule reprise : l'adresse signée vit une heure, et un widget
+  /// qui vit plus longtemps (la pastille de la barre du haut) finit par
+  /// en tenir une périmée. Quand le téléphone vide son cache d'images,
+  /// l'image repart alors sur une adresse morte — sans cette reprise,
+  /// elle disparaissait définitivement.
+  bool _reprise = false;
+
   Widget _attente(BuildContext c) => SizedBox(
         width: widget.width,
         height: widget.height,
@@ -62,12 +69,24 @@ class _ImageProtegeeState extends State<ImageProtegee> {
         ),
       );
 
+  Widget _refuse(BuildContext c) => SizedBox(
+        width: widget.width,
+        height: widget.height,
+        child: Center(
+          child: Icon(Icons.lock_outline_rounded,
+              size: 18, color: Theme.of(c).hintColor),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<String>(
       future: _lien,
       builder: (c, instantane) {
         if (instantane.hasError) {
+          // Refusé par la base : ce n'est pas une panne, et le cadenas
+          // le dit mieux qu'une image cassée.
+          if (instantane.error is LienRefuse) return _refuse(c);
           return widget.errorBuilder?.call(
                   c, instantane.error!, instantane.stackTrace) ??
               _attente(c);
@@ -79,7 +98,25 @@ class _ImageProtegeeState extends State<ImageProtegee> {
           height: widget.height,
           fit: widget.fit,
           loadingBuilder: widget.loadingBuilder,
-          errorBuilder: widget.errorBuilder,
+          errorBuilder: (ec, erreur, pile) {
+            if (!_reprise) {
+              _reprise = true;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) {
+                  setState(() => _lien =
+                      LienFichier.affichable(widget.adresse, forcer: true));
+                }
+              });
+              return _attente(ec);
+            }
+            return widget.errorBuilder?.call(ec, erreur, pile) ??
+                SizedBox(
+                  width: widget.width,
+                  height: widget.height,
+                  child: Icon(Icons.broken_image_outlined,
+                      color: Theme.of(ec).hintColor),
+                );
+          },
         );
       },
     );

@@ -213,6 +213,11 @@ class _CoquilleState extends State<Coquille> with WidgetsBindingObserver {
     if (_index >= onglets.length) _index = 0;
     final courant = onglets[_index];
     final couleurRole = Palette.duRole(etat.role);
+    // Le fermier n a aucun onglet a pastille d alerte : lui faire
+    // parcourir ses productions, mortalites, vaccins et stocks a chaque
+    // appui sur la barre du bas serait l inverse du but recherche.
+    final nbAlertes =
+        onglets.any((o) => o.badgeAlerte) ? EcranAlertes.compte(etat) : 0;
 
     // Les quatre premiers onglets vont dans la barre du bas ;
     // le reste est rangé derrière le bouton « Plus ».
@@ -316,13 +321,13 @@ class _CoquilleState extends State<Coquille> with WidgetsBindingObserver {
           destinations: [
             for (var i = 0; i < visibles && i < onglets.length; i++)
               NavigationDestination(
-                icon: _icone(onglets[i], etat, plein: false),
-                selectedIcon: _icone(onglets[i], etat, plein: true),
+                icon: _icone(onglets[i], etat, nbAlertes, plein: false),
+                selectedIcon: _icone(onglets[i], etat, nbAlertes, plein: true),
                 label: onglets[i].titre,
               ),
             NavigationDestination(
               icon: Badge(
-                isLabelVisible: _resteUnBadge(onglets, visibles, etat),
+                isLabelVisible: _resteUnBadge(onglets, visibles, etat, nbAlertes),
                 child: const Icon(Icons.more_horiz_rounded),
               ),
               label: 'Plus',
@@ -333,21 +338,25 @@ class _CoquilleState extends State<Coquille> with WidgetsBindingObserver {
     );
   }
 
-  bool _resteUnBadge(List<Onglet> onglets, int visibles, Etat etat) {
+  // nbAlertes est calcule UNE fois par redessin et passe ici : calculer()
+  // parcourt tous les batiments, mortalites, vaccins et stocks, et il
+  // etait rappele pour chaque onglet de la barre du bas.
+  bool _resteUnBadge(
+      List<Onglet> onglets, int visibles, Etat etat, int nbAlertes) {
     for (var i = visibles; i < onglets.length; i++) {
       if (onglets[i].badge && etat.aValider > 0) return true;
-      if (onglets[i].badgeAlerte && EcranAlertes.compte(etat) > 0) return true;
+      if (onglets[i].badgeAlerte && nbAlertes > 0) return true;
     }
     return false;
   }
 
-  Widget _icone(Onglet o, Etat etat, {required bool plein}) {
+  Widget _icone(Onglet o, Etat etat, int nbAlertes, {required bool plein}) {
     final ico = Icon(plein ? o.iconePleine : o.icone);
     if (o.badge && etat.aValider > 0) {
       return Badge(label: Text('${etat.aValider}'), child: ico);
     }
     if (o.badgeAlerte) {
-      final n = EcranAlertes.compte(etat);
+      final n = nbAlertes;
       if (n > 0) {
         return Badge(
             backgroundColor: Palette.rouge, label: Text('$n'), child: ico);

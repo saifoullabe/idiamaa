@@ -20,18 +20,31 @@ class _EcranPointageState extends State<EcranPointage> {
   Timer? _horloge;
   bool _occupe = false;
 
+  /// Les secondes affichées par le chronomètre. Un ValueNotifier plutôt
+  /// qu'un setState : seul le chiffre se redessine.
+  final _secondes = ValueNotifier<int>(0);
+
   @override
   void initState() {
     super.initState();
     // Le chronomètre avance seul tant que la personne est en ligne.
+    // On ne redessine QUE le chiffre : un setState sur tout l'écran
+    // reconstruisait chaque seconde l'historique des pointages et ses
+    // cartes, sur un téléphone modeste et pendant des heures.
+    // Le notifieur ne porte PAS la valeur : il ne sert qu'à cadencer le
+    // redessin. Le chiffre est relu vivant à chaque fois — sinon, après
+    // une sortie puis une nouvelle arrivée, l'écran affichait pendant
+    // une seconde la durée de la journée précédente.
     _horloge = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted && context.read<Etat>().enLigne) setState(() {});
+      if (!mounted) return;
+      if (context.read<Etat>().enLigne) _secondes.value++;
     });
   }
 
   @override
   void dispose() {
     _horloge?.cancel();
+    _secondes.dispose();
     super.dispose();
   }
 
@@ -90,13 +103,18 @@ class _EcranPointageState extends State<EcranPointage> {
                 Text('TEMPS TRAVAILLÉ AUJOURD’HUI',
                     style: Theme.of(context).textTheme.labelSmall),
                 const SizedBox(height: 6),
-                Text(chrono(etat.monPointage!.dureeSecondes),
+                ValueListenableBuilder<int>(
+                  valueListenable: _secondes,
+                  builder: (_, _, _) => Text(
+                    chrono(etat.monPointage?.dureeSecondes ?? 0),
                     style: const TextStyle(
                         fontSize: 42,
                         fontWeight: FontWeight.w800,
                         letterSpacing: -1.5,
                         fontFeatures: [FontFeature.tabularFigures()],
-                        color: Palette.vert)),
+                        color: Palette.vert),
+                  ),
+                ),
                 const SizedBox(height: 4),
                 Text('Arrivée pointée à ${heureSec(etat.monPointage!.debut)}',
                     style: Theme.of(context).textTheme.bodySmall),

@@ -11,6 +11,7 @@ import '../data/api.dart';
 import '../data/etat.dart';
 import '../models/modeles.dart';
 import '../widgets/communs.dart';
+import '../data/lien_fichier.dart';
 import 'formulaires.dart';
 
 /// Les mouvements d'argent entre l'administration et les fermes,
@@ -53,12 +54,30 @@ class _EcranDepotsState extends State<EcranDepots> {
       backgroundColor: Colors.transparent,
       body: RefreshIndicator(
         onRefresh: etat.rafraichir,
-        child: ListView(
+        // ListView.builder : la liste des dépôts n'est bornée par rien
+        // et grossit chaque mois. Avec « children », toutes les cartes
+        // étaient construites à chaque redessin.
+        child: ListView.builder(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-          children: [
-            _filtres(context, etat),
-            const SizedBox(height: 14),
-            GrilleChiffres([
+          itemCount: lignes.isEmpty ? 2 : 1 + lignes.length,
+          itemBuilder: (_, i) {
+            if (i > 0) {
+              if (lignes.isEmpty) {
+                return Bloc(
+                    enfant: Vide('Aucun dépôt enregistré',
+                        icone: Icons.account_balance_outlined,
+                        action: 'Enregistrer un dépôt',
+                        auClic: () => formulaireDepot(context)));
+              }
+              return _carte(context, etat, lignes[i - 1]);
+            }
+            // stretch : sans lui, les filtres se centrent et se deplacent
+            // quand on en ajoute un. Enfant direct du ListView, cet
+            // en-tete recevait la pleine largeur.
+            return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              _filtres(context, etat),
+              const SizedBox(height: 14),
+              GrilleChiffres([
               CarteChiffre(
                   libelle: etat.estAdmin ? 'Envoyés aux fermes' : 'Reçus de l’admin',
                   valeur: gnfCourt(envoyesParAdmin),
@@ -75,19 +94,12 @@ class _EcranDepotsState extends State<EcranDepots> {
                   complement: '${lignes.where((d) => Statut.enAttente(d.statut)).length} dépôt(s)',
                   couleur: Palette.orFonce,
                   icone: Icons.hourglass_top_rounded),
-            ], largeurMin: 150),
-            const SizedBox(height: 18),
-            _cumuls(context, etat),
-            const SizedBox(height: 18),
-            if (lignes.isEmpty)
-              Bloc(
-                  enfant: Vide('Aucun dépôt enregistré',
-                      icone: Icons.account_balance_outlined,
-                      action: 'Enregistrer un dépôt',
-                      auClic: () => formulaireDepot(context)))
-            else
-              for (final d in lignes) _carte(context, etat, d),
-          ],
+              ], largeurMin: 150),
+              const SizedBox(height: 18),
+              _cumuls(context, etat),
+              const SizedBox(height: 18),
+            ]);
+          },
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -480,7 +492,12 @@ class _EcranDepotsState extends State<EcranDepots> {
 
   Future<void> _ouvrir(BuildContext context, String url) async {
     if (url.toLowerCase().endsWith('.pdf')) {
-      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      // Le coffre n'est plus public : l'adresse enregistree en base ne
+      // suffit plus. Sans signature, le navigateur externe s'ouvrait
+      // sur une page d'erreur.
+      final lien = await LienFichier.affichable(url);
+      if (!context.mounted) return;
+      await launchUrl(Uri.parse(lien), mode: LaunchMode.externalApplication);
       return;
     }
     if (!context.mounted) return;

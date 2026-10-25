@@ -26,6 +26,10 @@ class _EcranItineraireState extends State<EcranItineraire> {
   String? _personne;
   final _ouverts = <String>{};
 
+  /// Le chemin déjà demandé, par sortie. Sans cela la requête repartait
+  /// à chaque redessin de l'écran.
+  final _chemins = <String, Future<List<Trajet>>>{};
+
   @override
   Widget build(BuildContext context) {
     final etat = context.watch<Etat>();
@@ -47,7 +51,13 @@ class _EcranItineraireState extends State<EcranItineraire> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: RefreshIndicator(
-        onRefresh: etat.rafraichir,
+        onRefresh: () async {
+          // Le chemin d'une sortie GROSSIT tant que la fenêtre de deux
+          // heures est ouverte : sans vider, tirer vers le bas rendait
+          // indéfiniment le même trajet tronqué.
+          _chemins.clear();
+          await etat.rafraichir();
+        },
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
           children: [
@@ -209,8 +219,19 @@ class _EcranItineraireState extends State<EcranItineraire> {
       return const Vide('Le pointage lié a été supprimé',
           icone: Icons.link_off_rounded);
     }
+    // La requête est gardée par sortie : créée directement dans le
+    // FutureBuilder, elle repartait à CHAQUE redessin — donc à chaque
+    // défilement, et autant de fois que de points du chemin.
+    // On oublie une requête qui a échoué : sans cela, un échec de
+    // réseau se gravait pour toute la session et l'écran répétait
+    // « impossible de lire le chemin » sans jamais réessayer.
+    final chemin = _chemins[s.id] ??=
+        Api.trajets(s.pointageId!).onError<Object>((e, _) {
+      _chemins.remove(s.id);
+      throw e;
+    });
     return FutureBuilder<List<Trajet>>(
-      future: Api.trajets(s.pointageId!),
+      future: chemin,
       builder: (c, instantane) {
         if (instantane.connectionState != ConnectionState.done) {
           return const Padding(
@@ -223,8 +244,15 @@ class _EcranItineraireState extends State<EcranItineraire> {
           );
         }
         if (instantane.hasError) {
-          return Vide('Impossible de lire le chemin : ${instantane.error}',
-              icone: Icons.wifi_off_rounded);
+          return Column(children: [
+            const Vide('Le chemin n’a pas pu être lu — réseau coupé ?',
+                icone: Icons.wifi_off_rounded),
+            TextButton.icon(
+              onPressed: () => setState(() => _chemins.remove(s.id)),
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: const Text('Réessayer'),
+            ),
+          ]);
         }
 
         final points = instantane.data ?? [];

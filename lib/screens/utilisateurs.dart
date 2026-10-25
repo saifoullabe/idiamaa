@@ -11,6 +11,7 @@ import '../data/api.dart';
 import '../data/etat.dart';
 import '../models/modeles.dart';
 import '../widgets/communs.dart';
+import '../data/lien_fichier.dart';
 import 'formulaires.dart';
 
 /// Les espaces de connexion : administrateurs, gérants, fermiers.
@@ -352,7 +353,12 @@ class _EcranUtilisateursState extends State<EcranUtilisateurs> {
 
   Future<void> _ouvrirDocument(BuildContext context, String url) async {
     if (url.toLowerCase().endsWith('.pdf')) {
-      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+      // Le coffre n'est plus public : l'adresse enregistree en base ne
+      // suffit plus. Sans signature, le navigateur externe s'ouvrait
+      // sur une page d'erreur.
+      final lien = await LienFichier.affichable(url);
+      if (!context.mounted) return;
+      await launchUrl(Uri.parse(lien), mode: LaunchMode.externalApplication);
       return;
     }
     if (!context.mounted) return;

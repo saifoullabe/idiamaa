@@ -49,12 +49,31 @@ class _EcranRecettesState extends State<EcranRecettes> {
       backgroundColor: Colors.transparent,
       body: RefreshIndicator(
         onRefresh: etat.rafraichir,
-        child: ListView(
+        // ListView.builder et non ListView(children:) : la liste des
+        // recettes n'est bornée par rien et grossit chaque jour. Avec
+        // « children », toutes les cartes étaient construites à chaque
+        // redessin, même celles qu'on ne voit pas.
+        child: ListView.builder(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-          children: [
-            _filtres(context, etat),
-            const SizedBox(height: 14),
-            GrilleChiffres([
+          itemCount: lignes.isEmpty ? 2 : 1 + lignes.length,
+          itemBuilder: (_, i) {
+            if (i > 0) {
+              if (lignes.isEmpty) {
+                return Bloc(
+                    enfant: Vide('Aucune recette pour ce filtre',
+                        icone: Icons.payments_outlined,
+                        action: 'Enregistrer une vente',
+                        auClic: () => formulaireRecette(context)));
+              }
+              return _carte(context, etat, lignes[i - 1]);
+            }
+            // stretch : sans lui, les filtres se centrent et se deplacent
+            // quand on en ajoute un. Enfant direct du ListView, cet
+            // en-tete recevait la pleine largeur.
+            return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              _filtres(context, etat),
+              const SizedBox(height: 14),
+              GrilleChiffres([
               CarteChiffre(
                   libelle: 'Recettes validées',
                   valeur: gnfCourt(valide),
@@ -68,17 +87,10 @@ class _EcranRecettesState extends State<EcranRecettes> {
                       '${lignes.where((r) => Statut.enAttente(r.statut)).length} saisie(s)',
                   couleur: Palette.orFonce,
                   icone: Icons.hourglass_top_rounded),
-            ], largeurMin: 150),
-            const SizedBox(height: 18),
-            if (lignes.isEmpty)
-              Bloc(
-                  enfant: Vide('Aucune recette pour ce filtre',
-                      icone: Icons.payments_outlined,
-                      action: 'Enregistrer une vente',
-                      auClic: () => formulaireRecette(context)))
-            else
-              for (final r in lignes) _carte(context, etat, r),
-          ],
+              ], largeurMin: 150),
+              const SizedBox(height: 18),
+            ]);
+          },
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(

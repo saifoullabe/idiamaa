@@ -240,12 +240,15 @@ class _EcranDepensesState extends State<EcranDepenses> {
               ]),
             ),
           ),
-          AnimatedCrossFade(
-            duration: const Duration(milliseconds: 220),
-            crossFadeState: ouverte
-                ? CrossFadeState.showFirst
-                : CrossFadeState.showSecond,
-            firstChild: lignes.isEmpty
+          // AnimatedCrossFade construit SES DEUX enfants, même celui
+          // qu'on ne voit pas : les cinq catégories repliées bâtissaient
+          // quand même toutes leurs lignes, à chaque redessin. On ne
+          // construit donc le contenu que lorsque la catégorie est
+          // ouverte.
+          if (!ouverte)
+            const SizedBox(width: double.infinity)
+          else
+            lignes.isEmpty
                 ? Padding(
                     padding: const EdgeInsets.all(6),
                     child: Vide('Aucune dépense dans cette catégorie',
@@ -259,8 +262,6 @@ class _EcranDepensesState extends State<EcranDepenses> {
                       _groupeArticle(context, etat, cat, entree.key,
                           entree.value),
                   ]),
-            secondChild: const SizedBox(width: double.infinity),
-          ),
         ]),
       ),
     );

@@ -408,11 +408,15 @@ class EcranValidation extends StatelessWidget {
           Flexible(
             child: InteractiveViewer(
               child: ImageProtegee(url,
-                  errorBuilder: (_, __, ___) => const Padding(
+                  // Depuis que le coffre est fermé, la cause la plus
+                  // probable d'un échec n'est plus « c'est un PDF »
+                  // mais le réseau. Dire « PDF » envoyait le gérant
+                  // valider de l'argent sans avoir vu le justificatif.
+                  errorBuilder: (_, _, _) => const Padding(
                         padding: EdgeInsets.all(30),
                         child: Vide(
-                            'Ce reçu est un fichier PDF — ouvrez-le depuis la liste des dépôts.',
-                            icone: Icons.picture_as_pdf_outlined),
+                            'Reçu illisible pour le moment — vérifiez votre réseau, puis réessayez.',
+                            icone: Icons.image_not_supported_outlined),
                       )),
             ),
           ),
