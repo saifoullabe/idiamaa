@@ -30,12 +30,24 @@ String gnfCourt(num? v) {
   return nb(v);
 }
 
+/// 60.0 → « 60,0 % » — la virgule, comme partout ailleurs dans
+/// l'application. Le point décimal anglais sautait aux yeux à côté des
+/// « 1 700 » de la même ligne.
+String pourcent(num? v, {int decimales = 1}) => v == null
+    ? '—'
+    : '${v.toStringAsFixed(decimales).replaceAll('.', ',')} %';
+
 String jour(DateTime? d) => d == null ? '—' : _jourCourt.format(d);
 String jourLong(DateTime? d) => d == null ? '—' : _jourLong.format(d);
 String jourMois(DateTime? d) => d == null ? '—' : _jourMois.format(d);
 String moisAnnee(DateTime? d) => d == null ? '—' : _moisAnnee.format(d);
 String heure(DateTime? d) => d == null ? '—' : _heure.format(d.toLocal());
 String heureSec(DateTime? d) => d == null ? '—' : _heureSec.format(d.toLocal());
+
+/// Le jour d'un instant, sans l'heure : pour comparer une date de
+/// déclaration à une date de comptage sans que 14 h 30 fasse la
+/// différence.
+DateTime jourDe(DateTime d) => DateTime(d.year, d.month, d.day);
 
 /// Date au format que comprend la base : 2026-08-31
 String iso(DateTime d) =>

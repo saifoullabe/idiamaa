@@ -135,7 +135,8 @@ class EcranValidation extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('${lot.length} bâtiment(s) — ${jour(lot.first.date)}',
+              Text('${lot.length} bâtiment${lot.length > 1 ? 's' : ''} — '
+                  '${jour(lot.first.date)}',
                   style: const TextStyle(fontWeight: FontWeight.w800)),
               Text(
                   '${etat.nomPersonne(lot.first.auteurId)} · ${etat.nomFerme(lot.first.fermeId)}',

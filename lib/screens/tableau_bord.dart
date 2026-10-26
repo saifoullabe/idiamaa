@@ -500,7 +500,12 @@ class TableauBord extends StatelessWidget {
               Text(b.nom,
                   style: const TextStyle(
                       fontSize: 13.5, fontWeight: FontWeight.w700)),
-              Text('${b.type} · ${nb(b.nbPoules)} poules',
+              Text(
+                  b.nbPoules > 0
+                      ? '${b.type} · ${nb(b.nbPoules)} poules comptées'
+                      // « 0 poules » sans un mot : le fermier ne savait
+                      // pas qu'il devait les compter, ni où.
+                      : '${b.type} · poules à compter dans Production',
                   style: Theme.of(context).textTheme.bodySmall),
             ],
           ),

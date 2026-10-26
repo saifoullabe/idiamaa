@@ -2,9 +2,43 @@ import 'dart:typed_data';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../core/comparaison.dart';
 import '../core/constantes.dart';
 import '../core/format.dart';
 import '../models/modeles.dart';
+
+/// Pourquoi un calcul demandé à la base n'a pas répondu.
+///
+/// Un `catch` nu accusait le réseau dans tous les cas. Tant qu'un
+/// fichier SQL n'était pas lancé, les trois rôles lisaient « la
+/// connexion a coupé » pour toujours, avec un réseau parfait, et
+/// personne ne pouvait deviner qu'il manquait une installation.
+enum Panne { reseau, pasEnService, refuse }
+
+Panne panneDe(Object e) {
+  final t = e.toString();
+  if (t.contains('PGRST202') ||
+      t.contains('PGRST205') ||
+      t.contains('Could not find the function') ||
+      t.contains('does not exist')) {
+    return Panne.pasEnService;
+  }
+  if (t.contains('42501') ||
+      t.contains('permission denied') ||
+      t.contains('row-level security')) {
+    return Panne.refuse;
+  }
+  return Panne.reseau;
+}
+
+String direPanne(Panne p) => switch (p) {
+      Panne.pasEnService =>
+        'Le calcul du pourcentage n’est pas encore en service. '
+            'Votre administrateur doit terminer l’installation.',
+      Panne.refuse => 'Vous n’avez pas accès à ces chiffres.',
+      Panne.reseau => 'Les pourcentages n’ont pas pu être calculés : '
+          'la connexion a coupé. Tirez vers le bas pour réessayer.',
+    };
 
 /// Une photo ou un document choisi par l'utilisateur, gardé sous forme
 /// d'octets : c'est la seule forme qui marche à la fois sur le téléphone
@@ -484,6 +518,117 @@ class Api {
     return r.map<Depot>((m) => Depot.depuis(m)).toList();
   }
 
+  /// Le pourcentage de ponte des six periodes, calcule par la base.
+  /// Le telephone ne sait pas le faire : il ne connait qu une partie
+  /// des mortalites et des productions. Voir sql/17.
+  static Future<PonteComparee> ponteComparee(
+      {String? batimentId, String? fermeId}) async {
+    final r = await _db.rpc('ponte_comparee', params: {
+      'p_batiment': batimentId,
+      'p_ferme': fermeId,
+    });
+    if (r is! List) return PonteComparee.vide;
+    return PonteComparee.depuis(r);
+  }
+
+  /// Toutes les periodes de TOUS les batiments, en un seul appel.
+  /// L ecran Sante en demandait un par batiment : dix batiments, dix
+  /// allers-retours sur un reseau guineen. Voir sql/17.
+  static Future<Map<String, PonteComparee>> ponteCompareeParBatiment(
+      {String? fermeId}) async {
+    final r = await _db.rpc('ponte_comparee_par_batiment', params: {
+      'p_ferme': fermeId,
+    });
+    final brut = <String, Map<String, Ponte>>{};
+    if (r is! List) return {};
+    for (final l in r) {
+      final m = l as Map<String, dynamic>;
+      final id = m['batiment_id'];
+      if (id == null) continue;
+      (brut['$id'] ??= {})['${m['periode']}'] = Ponte.depuis(m);
+    }
+    return {
+      for (final e in brut.entries)
+        e.key: PonteComparee.parPeriode(e.value),
+    };
+  }
+
+  /// Le pourcentage de ponte sur une periode choisie (les 30 derniers
+  /// jours, les 7, l annee). [fin] est EXCLUE.
+  static Future<Ponte> ponteEntre(
+      {required DateTime debut,
+      required DateTime fin,
+      String? batimentId,
+      String? fermeId}) async {
+    final r = await _db.rpc('ponte_entre', params: {
+      'p_debut': iso(debut),
+      'p_fin': iso(fin),
+      'p_batiment': batimentId,
+      'p_ferme': fermeId,
+    });
+    if (r is! List || r.isEmpty) return Ponte.vide;
+    return Ponte.depuis(r.first as Map<String, dynamic>);
+  }
+
+  /// Le taux de chaque batiment sur la periode, pour le classement.
+  /// Un batiment sans aucune saisie est ABSENT de la reponse : il n a
+  /// pas un taux de zero, il n a pas de taux.
+  static Future<Map<String, Ponte>> pontePourBatiments(
+      {required DateTime debut,
+      required DateTime fin,
+      String? fermeId}) async {
+    final r = await _db.rpc('ponte_par_batiment', params: {
+      'p_debut': iso(debut),
+      'p_fin': iso(fin),
+      'p_ferme': fermeId,
+    });
+    final par = <String, Ponte>{};
+    if (r is! List) return par;
+    for (final l in r) {
+      final m = l as Map<String, dynamic>;
+      final id = m['batiment_id'];
+      if (id != null) par['$id'] = Ponte.depuis(m);
+    }
+    return par;
+  }
+
+  /// L effectif vivant de chaque batiment, calcule par la base. Le
+  /// telephone le deduisait d une liste de morts plafonnee a 500 : il
+  /// croyait le cheptel plus grand qu il n est. Voir sql/17.
+  static Future<Map<String, Vivantes>> batimentsVivants(
+      {String? fermeId}) async {
+    var q = _db.from('batiments_vivants').select();
+    if (fermeId != null) q = q.eq('ferme_id', fermeId);
+    final r = await q;
+    final par = <String, Vivantes>{};
+    for (final m in r) {
+      final id = m['id'];
+      if (id != null) {
+        par['$id'] = Vivantes(
+          vivantes: (m['vivantes'] as num?)?.toInt() ?? 0,
+          morts: (m['morts'] as num?)?.toInt() ?? 0,
+        );
+      }
+    }
+    return par;
+  }
+
+  /// Le fermier pose le nombre de poulets, une seule fois. Ensuite,
+  /// c'est la declaration des morts qui fait baisser l'effectif vivant.
+  static Future<void> poserEffectif(String batimentId, int nombre) =>
+      _db.rpc('poser_effectif',
+          params: {'p_batiment': batimentId, 'p_nombre': nombre});
+
+  static Future<void> confirmerEffectif(String batimentId) =>
+      _db.rpc('admin_confirmer_effectif', params: {'p_batiment': batimentId});
+
+  /// Le gerant ou l administrateur corrige une faute de frappe. La date
+  /// du comptage n est PAS deplacee : les morts deja declarees restent
+  /// deduites et les pourcentages des jours passes ne changent pas.
+  static Future<void> corrigerEffectif(String batimentId, int nombre) =>
+      _db.rpc('corriger_effectif',
+          params: {'p_batiment': batimentId, 'p_nombre': nombre});
+
   // ── SORTIES DE ZONE ET ITINÉRAIRE ──────────────────────────────────
   /// Les fois où quelqu'un a quitté sa ferme pendant qu'il était en
   /// ligne. C'est la base qui les écrit, pendant le suivi.
@@ -639,10 +784,13 @@ class Api {
       _db.from('ventes').update(champs).eq('id', id);
 
   // ── SANTÉ : MORTALITÉ ET VACCINS ───────────────────────────────────
+  /// Une ligne par batiment et par jour. 500 lignes, c etait un mois et
+  /// demi pour une dizaine de batiments : les « morts aujourd hui » de
+  /// l administrateur, toutes fermes confondues, tombaient en silence.
   static Future<List<Mortalite>> mortalites({String? fermeId}) async {
     var q = _db.from('mortalites').select();
     if (fermeId != null) q = q.eq('ferme_id', fermeId);
-    final r = await q.order('date', ascending: false).limit(500);
+    final r = await q.order('date', ascending: false).limit(4000);
     return r.map<Mortalite>((m) => Mortalite.depuis(m)).toList();
   }
 

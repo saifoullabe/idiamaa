@@ -97,7 +97,8 @@ class CarteFerme extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(
                       '📍 ${ferme.ville.isEmpty ? '—' : ferme.ville} · '
-                      '${bats.length} bâtiment(s) · alvéole ${gnf(ferme.prixAlveole)}',
+                      '${bats.length} bâtiment${bats.length > 1 ? 's' : ''} · '
+                      'alvéole ${gnf(ferme.prixAlveole)}',
                       style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.72),
                           fontSize: 11.5)),
@@ -190,7 +191,9 @@ class CarteFerme extends StatelessWidget {
                 title: Text(b.nom,
                     style: const TextStyle(fontWeight: FontWeight.w600)),
                 subtitle: Text(
-                    '${b.type} · ${nb(b.nbPoules)} poules · ${b.etat}'),
+                    b.nbPoules > 0
+                        ? '${b.type} · ${nb(b.nbPoules)} poules comptées · ${b.etat}'
+                        : '${b.type} · poules à compter · ${b.etat}'),
                 trailing: PopupMenuButton<String>(
                   itemBuilder: (_) => const [
                     PopupMenuItem(value: 'modifier', child: Text('Modifier')),

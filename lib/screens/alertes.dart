@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/constantes.dart';
 import '../core/elevage.dart';
 import '../core/format.dart';
 import '../core/theme.dart';
@@ -172,7 +173,10 @@ class EcranAlertes extends StatelessWidget {
       for (var i = 1; i <= 7; i++) {
         final j = jourCourant.subtract(Duration(days: i));
         final p = etat.productions.where((x) =>
-            x.batimentId == b.id && x.date != null && iso(x.date!) == iso(j));
+            x.batimentId == b.id &&
+            x.statut == Statut.valide &&
+            x.date != null &&
+            iso(x.date!) == iso(j));
         if (p.isNotEmpty) serie.add(p.fold<int>(0, (s, x) => s + x.oeufs));
       }
       if (serie.length < 3) continue;
@@ -180,6 +184,7 @@ class EcranAlertes extends StatelessWidget {
       final aujourdHui = etat.productions
           .where((x) =>
               x.batimentId == b.id &&
+              x.statut == Statut.valide &&
               x.date != null &&
               iso(x.date!) == iso(jourCourant))
           .fold<int>(0, (s, x) => s + x.oeufs);
@@ -207,13 +212,17 @@ class EcranAlertes extends StatelessWidget {
 
       // Un pic de morts sur une journée : le signal le plus brutal.
       final duJour = etat.mortsDuJour(b.id, jourCourant);
-      if (duJour > 0 && vivantes > 0 && duJour / vivantes * 100 >= 0.5) {
+      final avantCeJour = vivantes + duJour;
+      if (duJour > 0 &&
+          avantCeJour > 0 &&
+          duJour / avantCeJour * 100 >= 0.5) {
         liste.add(Alerte(
           Gravite.critique,
           Icons.dangerous_outlined,
           'Mortalité anormale — ${b.nom}',
-          '$duJour poules mortes aujourd’hui sur ${nb(vivantes)} vivantes, '
-              'soit ${(duJour / vivantes * 100).toStringAsFixed(2)} % en un jour.'
+          '$duJour poules mortes aujourd’hui sur ${nb(avantCeJour)} '
+              'présentes hier, soit ${pourcent(duJour / avantCeJour * 100, decimales: 2)} '
+              'en un jour. Il en reste ${nb(vivantes)}.'
               '${etat.estAdmin ? ' (${etat.nomFerme(b.fermeId)})' : ''}',
           conseil:
               'Au-delà de 0,5 % en une journée, on ne parle plus de pertes '
@@ -305,7 +314,9 @@ class EcranAlertes extends StatelessWidget {
       liste.add(Alerte(
         Gravite.attention,
         Icons.egg_outlined,
-        '${sansSaisie.length} bâtiment(s) sans production saisie',
+        sansSaisie.length == 1
+            ? 'Un bâtiment sans production saisie'
+            : '${sansSaisie.length} bâtiments sans production saisie',
         sansSaisie.map((b) => b.nom).join(', '),
         conseil:
             'La collecte du matin n’a peut-être pas été enregistrée. '
@@ -418,6 +429,33 @@ class EcranAlertes extends StatelessWidget {
           conseil:
               'Les saisies de ses fermiers resteront en attente indéfiniment. '
               'Attribuez-lui un gérant depuis la fiche de la ferme.',
+        ));
+      }
+    }
+
+    // ── 7 ter. Un effectif posé par un fermier ──
+    if (etat.estAdmin || etat.estGerant) {
+      // Seulement s'il y a une trace : un nombre écrit par un
+      // responsable depuis la fiche n'a rien à vérifier, et l'alerte le
+      // signait « Quelqu'un » et le datait « — ».
+      for (final b in etat.batiments.where((b) =>
+          b.nbPoules > 0 &&
+          b.effectifPosePar != null &&
+          !b.effectifConfirme)) {
+        final qui = etat.personnes
+            .cast<Profil?>()
+            .firstWhere((p) => p?.id == b.effectifPosePar, orElse: () => null);
+        liste.add(Alerte(
+          Gravite.attention,
+          Icons.pets_outlined,
+          'Effectif à vérifier — ${b.nom}',
+          '${qui?.nomComplet ?? 'Quelqu’un'} a compté ${nb(b.nbPoules)} '
+              'poulets le ${jourMois(b.effectifPoseLe)}. Tout le '
+              'pourcentage de ponte et le taux de mortalité se calculent '
+              'sur ce nombre.',
+          conseil:
+              'Vérifiez-le dans l’onglet Santé. S’il est faux, tous les '
+              'pourcentages de ce bâtiment le seront aussi.',
         ));
       }
     }

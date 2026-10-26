@@ -21,12 +21,17 @@ class EcranProductions extends StatefulWidget {
 class _EcranProductionsState extends State<EcranProductions> {
   DateTime _date = aujourdhui();
   final Map<String, TextEditingController> _champs = {};
+  /// Les champs du premier comptage, un par batiment sans effectif.
+  final Map<String, TextEditingController> _effectifs = {};
   bool _enregistrement = false;
   String? _dateChargee;
 
   @override
   void dispose() {
     for (final c in _champs.values) {
+      c.dispose();
+    }
+    for (final c in _effectifs.values) {
       c.dispose();
     }
     super.dispose();
@@ -68,19 +73,33 @@ class _EcranProductionsState extends State<EcranProductions> {
     final totalAlveoles =
         bats.fold<int>(0, (s, b) => s + _nombre(b.id));
     final totalOeufs = totalAlveoles * oeufsParAlveole;
-    final totalPoules = bats.fold<int>(0, (s, b) => s + b.nbPoules);
+    // Les poules VIVANTES : sur l'effectif de départ, le pourcentage
+    // baissait à mesure que le lot mourait, même quand les survivantes
+    // pondaient très bien.
+    // Seuls les bâtiments où quelque chose est tapé, et seulement
+    // pour aujourd'hui : le bandeau divisait les œufs d'un bâtiment par
+    // le cheptel de TOUTE la ferme et contredisait les cartes juste
+    // au-dessus.
+    final totalPoules = bats
+        .where((b) => _nombre(b.id) > 0)
+        .fold<int>(0, (s, b) => s + etat.effectifVivant(b));
     final totalValeur = bats.fold(
         0, (s, b) => s + _nombre(b.id) * _prix(etat, b));
-    final taux =
-        totalPoules > 0 ? (totalOeufs / totalPoules * 100).round() : 0;
+    final taux = (iso(_date) == iso(aujourdhui()) && totalPoules > 0)
+        ? (totalOeufs / totalPoules * 100).round()
+        : 0;
 
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: RefreshIndicator(
-        onRefresh: () async {
-          _dateChargee = null;
-          await etat.rafraichir();
-        },
+        // On ne remet PAS _dateChargee à null : tous les bandeaux de
+        // l'application disent « tirez vers le bas pour réessayer », et
+        // ce geste réécrivait les champs avec ce qui est enregistré —
+        // c'est-à-dire du vide. Le fermier avait tapé 40, le réseau
+        // avait coupé, il tirait vers le bas, et sa saisie disparaissait
+        // sans un mot. Les nouvelles valeurs apparaîtront au prochain
+        // changement de journée.
+        onRefresh: etat.rafraichir,
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
           children: [
@@ -90,7 +109,7 @@ class _EcranProductionsState extends State<EcranProductions> {
               Bloc(
                   enfant: Vide(
                       'Aucun bâtiment sur votre ferme.\n'
-                      '${etat.estGerant ? 'Ajoutez-en un depuis la fiche de la ferme.' : 'Demandez à votre gérant d’en créer un.'}',
+                      '${etat.estGerant ? 'Demandez à votre administrateur d’en créer un.' : 'Demandez à votre gérant d’en créer un.'}',
                       icone: Icons.warehouse_outlined))
             else ...[
               for (final b in bats) _carteBatiment(context, etat, b),
@@ -181,13 +200,103 @@ class _EcranProductionsState extends State<EcranProductions> {
     );
   }
 
+  /// Tant que le bâtiment n'a pas d'effectif, le pourcentage de ponte
+  /// ne peut pas se calculer. Le fermier est devant les cages : c'est
+  /// lui qui compte. Il ne le pose qu'UNE fois — ensuite ce sont les
+  /// morts déclarées qui font baisser le nombre de vivantes.
+  Widget _demandeEffectif(BuildContext context, Etat etat, Batiment b) {
+    final champ = _effectifs.putIfAbsent(b.id, TextEditingController.new);
+    return Bloc(
+      bordure: Palette.orFonce,
+      enfant: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('${b.nom} — combien de poulets ?',
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 4),
+        Text(
+            'Sans ce nombre, le pourcentage de ponte ne peut pas être '
+            'calculé. Comptez une fois : ensuite, déclarez simplement '
+            'les morts.',
+            style: Theme.of(context).textTheme.bodySmall),
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(
+            child: TextField(
+              controller: champ,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                  labelText: 'Nombre de poulets',
+                  isDense: true,
+                  prefixIcon: Icon(Icons.pets_outlined, size: 20)),
+            ),
+          ),
+          const SizedBox(width: 10),
+          FilledButton(
+            onPressed: () async {
+              // La même règle que pour les alvéoles : on compte les
+              // poules quand on est à la ferme. Deux boutons
+              // « Enregistrer » sur le même écran et deux règles, cela
+              // ne s'explique pas.
+              if (!etat.peutSaisir) {
+                message(context, etat.raisonBlocage ?? 'Saisie impossible',
+                    erreur: true);
+                return;
+              }
+              final n = int.tryParse(champ.text.trim());
+              if (n == null || n <= 0) {
+                message(context, 'Indiquez un nombre de poulets.',
+                    erreur: true);
+                return;
+              }
+              final erreur =
+                  await etat.agir(() => Api.poserEffectif(b.id, n));
+              if (!context.mounted) return;
+              message(context, erreur ?? '${nb(n)} poulets enregistrés',
+                  erreur: erreur != null);
+            },
+            child: const Text('Enregistrer'),
+          ),
+        ]),
+      ]),
+    );
+  }
+
   Widget _carteBatiment(BuildContext context, Etat etat, Batiment b) {
+    // Pas d'effectif : on demande le nombre AU-DESSUS de la saisie, on
+    // ne la remplace pas. Le ramassage du jour doit pouvoir s'écrire
+    // même si personne n'a encore compté les poulets — sinon un
+    // bâtiment neuf perd ses premières journées d'œufs.
+    if (b.nbPoules <= 0) {
+      return Column(children: [
+        _demandeEffectif(context, etat, b),
+        const SizedBox(height: 12),
+        _carteSaisie(context, etat, b),
+      ]);
+    }
+    return _carteSaisie(context, etat, b);
+  }
+
+  Widget _carteSaisie(BuildContext context, Etat etat, Batiment b) {
+    // Un bâtiment créé APRÈS le chargement de la journée n'avait pas de
+    // contrôleur : le champ s'en fabriquait un à lui, le fermier voyait
+    // bien ses 40 alvéoles, et « Enregistrer » répondait « saisissez au
+    // moins une alvéole ». Le ramassage était perdu sans un mot.
+    _champs.putIfAbsent(b.id, TextEditingController.new);
+
     final saisie = _saisieDe(etat, b.id);
     final nombre = _nombre(b.id);
     final prix = _prix(etat, b);
     final oeufs = nombre * oeufsParAlveole;
-    final taux =
-        b.nbPoules > 0 && nombre > 0 ? (oeufs / b.nbPoules * 100).round() : 0;
+    // Sur les poules VIVANTES : c'est ce que la mise à jour des décès
+    // sert à corriger. Sur l'effectif de départ, le taux baissait à
+    // mesure que le lot mourait, même si les survivantes pondaient bien.
+    final vivantes = etat.effectifVivant(b);
+    // Et seulement pour AUJOURD'HUI : pour une journée passée, le
+    // cheptel d'aujourd'hui n'est pas celui de ce jour-là, et le chiffre
+    // s'écartait de dix points de celui que la base calcule.
+    final aujourdHui = iso(_date) == iso(aujourdhui());
+    final taux = (aujourdHui && vivantes > 0 && nombre > 0)
+        ? (oeufs / vivantes * 100).round()
+        : 0;
     final valeur = nombre * prix;
     final couleurEtat = switch (b.etat) {
       'Bon' => Palette.vert,
@@ -217,8 +326,16 @@ class _EcranProductionsState extends State<EcranProductions> {
                       Text(b.nom,
                           style: Theme.of(context).textTheme.titleSmall),
                       const SizedBox(height: 2),
+                      // Les poules VIVANTES : la carte annonçait « 2 000
+                      // poules » et le taux divisait par 1 700. Le
+                      // fermier qui refaisait le calcul de tête
+                      // trouvait autre chose que l'application.
                       Text(
-                          '${b.type} · ${nb(b.nbPoules)} poules · ${gnf(prix)}/alvéole',
+                          b.nbPoules > 0
+                              ? '${b.type} · ${nb(vivantes)} poules vivantes · '
+                                  '${gnf(prix)}/alvéole'
+                              : '${b.type} · poules à compter · '
+                                  '${gnf(prix)}/alvéole',
                           style: Theme.of(context).textTheme.bodySmall),
                     ],
                   ),
@@ -266,10 +383,24 @@ class _EcranProductionsState extends State<EcranProductions> {
               Row(children: [
                 _tuile(context, 'Œufs', oeufs > 0 ? nb(oeufs) : '—',
                     Palette.vert),
-                _tuile(context, 'Taux de ponte', taux > 0 ? '$taux %' : '—',
-                    taux >= 85
-                        ? Palette.vert
-                        : (taux >= 70 ? Palette.orFonce : Palette.rouge)),
+                // « Ponte estimée » et pas « Taux de ponte » : ce
+                // chiffre-là est calculé sur le téléphone, à partir de
+                // ce qui est TAPÉ, et tant que le gérant n'a pas validé
+                // il ne compte pas dans le vrai pourcentage. Sous le
+                // même nom, le fermier lisait 60 % ici et un tiret dans
+                // Santé, à la même minute.
+                _tuile(
+                    context,
+                    'Ponte estimée',
+                    taux > 0 ? '$taux %' : '—',
+                    // Un tiret en rouge se lit comme une alerte : gris
+                    // tant qu'il n'y a rien à juger. Mêmes seuils que
+                    // partout ailleurs : 80 et 65.
+                    taux == 0
+                        ? Palette.gris
+                        : (taux >= 80
+                            ? Palette.vert
+                            : (taux >= 65 ? Palette.orFonce : Palette.rouge))),
                 _tuile(context, 'Valeur',
                     valeur > 0 ? gnfCourt(valeur) : '—', Palette.or),
               ]),
@@ -310,6 +441,8 @@ class _EcranProductionsState extends State<EcranProductions> {
           child: Column(children: [
             Text(libelle,
                 textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.labelSmall),
             const SizedBox(height: 4),
             FittedBox(
@@ -353,7 +486,8 @@ class _EcranProductionsState extends State<EcranProductions> {
                       fontSize: 16,
                       fontWeight: FontWeight.w800)),
               if (taux > 0)
-                Text('Taux de ponte : $taux %',
+                Text('Ponte estimée : $taux % — le pourcentage officiel '
+                    'apparaît après validation',
                     style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.7),
                         fontSize: 11.5)),
@@ -405,7 +539,8 @@ class _EcranProductionsState extends State<EcranProductions> {
                 style: const TextStyle(fontWeight: FontWeight.w600)),
             subtitle: Text(
                 '${nb(parJour[j]!.fold<int>(0, (s, p) => s + p.oeufs))} œufs · '
-                '${parJour[j]!.length} bâtiment(s)'),
+                '${parJour[j]!.length} bâtiment'
+                '${parJour[j]!.length > 1 ? 's' : ''}'),
             trailing: Text(
                 gnfCourt(parJour[j]!.fold<int>(0, (s, p) => s + p.valeur)),
                 style: const TextStyle(
@@ -448,11 +583,17 @@ class _EcranProductionsState extends State<EcranProductions> {
       _enregistrement = false;
       _dateChargee = null;
     });
+    // Les champs ne sont rechargés QUE si tout est passé : sinon les
+    // alvéoles des bâtiments non enregistrés étaient effacées, sous un
+    // message qui demande de regarder avant de ressaisir.
+    if (erreur == null) _dateChargee = null;
     message(
         context,
         erreur ??
-            '${aEnregistrer.length} bâtiment(s) enregistré(s)'
-                '${etat.estAdmin ? '' : ' — en attente de validation'}',
+            (aEnregistrer.length == 1
+                    ? 'Ramassage enregistré'
+                    : '${aEnregistrer.length} bâtiments enregistrés') +
+                (etat.estAdmin ? '' : ' — en attente de validation'),
         erreur: erreur != null);
   }
 }

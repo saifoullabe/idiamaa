@@ -125,6 +125,13 @@ class Batiment {
   /// et l'âge commande le calendrier vaccinal et la ponte attendue.
   final DateTime? dateMiseEnPlace;
 
+  /// Qui a renseigne le nombre de poulets. Vide quand c'est un
+  /// responsable ; renseigne quand c'est le fermier, et il faut alors
+  /// que l'administrateur regarde.
+  final String? effectifPosePar;
+  final DateTime? effectifPoseLe;
+  final bool effectifConfirme;
+
   Batiment.depuis(Map<String, dynamic> m)
       : id = _txt(m['id']),
         fermeId = _txt(m['ferme_id']),
@@ -134,7 +141,11 @@ class Batiment {
         prixAlveole = _int(m['prix_alveole']),
         surface = _int(m['surface']),
         etat = _txt(m['etat']),
-        dateMiseEnPlace = _date(m['date_mise_en_place']);
+        dateMiseEnPlace = _date(m['date_mise_en_place']),
+        effectifPosePar = m['effectif_pose_par'] as String?,
+        effectifPoseLe = _date(m['effectif_pose_le']),
+        // Une cle absente ne doit pas faire croire que c'est verifie.
+        effectifConfirme = m['effectif_confirme'] == true;
 
   /// Âge du lot en jours. -1 si la date d'arrivage n'est pas renseignée.
   int get ageJours => dateMiseEnPlace == null

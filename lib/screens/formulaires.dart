@@ -1269,13 +1269,16 @@ Future<void> formulaireMortalite(BuildContext context, Batiment batiment,
   if (!_autorise(context, etat)) return;
 
   var date = jourCible ?? aujourdhui();
-  final existante = etat.mortalites.cast<Mortalite?>().firstWhere(
-        (m) =>
-            m!.batimentId == batiment.id &&
-            m.date != null &&
-            iso(m.date!) == iso(date),
-        orElse: () => null,
-      );
+  final jourOuvert = iso(date);
+  Mortalite? declarationDu(String j) =>
+      etat.mortalites.cast<Mortalite?>().firstWhere(
+            (m) =>
+                m!.batimentId == batiment.id &&
+                m.date != null &&
+                iso(m.date!) == j,
+            orElse: () => null,
+          );
+  final existante = declarationDu(jourOuvert);
 
   final nombre =
       TextEditingController(text: existante == null ? '' : '${existante.nombre}');
@@ -1349,9 +1352,39 @@ Future<void> formulaireMortalite(BuildContext context, Batiment batiment,
     enregistrer: () async {
       final n = int.tryParse(nombre.text);
       if (n == null || n < 0) return 'Indiquez le nombre de poules mortes.';
+      // Le vrai motif du refus, et pas « plus de morts que de poules
+      // vivantes (0) » : le chiffre du fermier était bon, c'est
+      // l'effectif qui manquait, et la phrase ne le disait pas.
+      if (batiment.nbPoules <= 0) {
+        return 'Personne n’a encore compté les poules de ce bâtiment. '
+            '${etat.estAdmin ? 'Renseignez l’effectif depuis la fiche du bâtiment, onglet Fermes.' : 'Renseignez-le d’abord depuis l’onglet Production.'}';
+      }
       if (n > vivantes + (existante?.nombre ?? 0)) {
         return 'Vous déclarez plus de morts qu’il n’y a de poules vivantes '
             '(${nb(vivantes)}). Vérifiez le chiffre.';
+      }
+      // Une seule ligne par bâtiment et par jour : si la date a été
+      // changée pour un jour qui a DÉJÀ une déclaration, enregistrer
+      // remplacerait ce chiffre-là, en silence. On le dit avant.
+      if (iso(date) != jourOuvert) {
+        final autre = declarationDu(iso(date));
+        if (autre != null) {
+          return '${nb(autre.nombre)} morts sont déjà déclarées le '
+              '${jour(date)} pour ce bâtiment. Fermez cette fenêtre et '
+              'ouvrez cette journée-là pour corriger son chiffre.';
+        }
+      }
+      // La base refuse une date antérieure au comptage ou à venir : on
+      // le dit ici, avant l'envoi, avec le motif en clair.
+      final borne = batiment.effectifPoseLe;
+      if (date.isAfter(aujourdhui())) {
+        return 'On ne peut pas déclarer des morts à une date à venir.';
+      }
+      if (borne != null && date.isBefore(jourDe(borne))) {
+        return 'Cette date précède le comptage des poules '
+            '(${jour(jourDe(borne))}). Les morts d’avant sont déjà retirées '
+            'du nombre compté : choisissez le jour du comptage ou un jour '
+            'suivant.';
       }
       return etat.agir(() async {
         final liens = await Api.envoyerFichiers(images, 'mortalites');

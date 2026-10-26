@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../core/comparaison.dart';
 import '../core/config.dart';
 import '../core/constantes.dart';
 import '../core/format.dart';
@@ -39,6 +40,18 @@ class Etat extends ChangeNotifier {
   List<Pointage> pointagesEnCours = [];
   Pointage? monPointage;
   Map<String, List<String>> articlesPerso = {};
+
+  /// L'effectif vivant de chaque bâtiment, tel que la BASE le compte.
+  /// Reste vide tant que sql/17 n'est pas lancé : on retombe alors sur
+  /// le calcul local, moins exact mais mieux que zéro partout.
+  Map<String, Vivantes> vivants = {};
+
+  /// Le numéro du tour de lecture. Il augmente à chaque fin de
+  /// rafraîchissement, et les écrans qui demandent un calcul à la base
+  /// s'en servent pour savoir qu'il faut le redemander. Sans lui, la
+  /// même carte affichait « Vivantes 1 950 » rafraîchi et « Ponte 92 % »
+  /// calculé sur 2 000, après une déclaration de mortalité.
+  int tour = 0;
 
   bool get connecte => moi != null;
   String get role => moi?.role ?? Role.fermier;
@@ -160,7 +173,25 @@ class Etat extends ChangeNotifier {
   }
 
   // ── Chargement ─────────────────────────────────────────────────────
-  Future<void> rafraichir() async {
+  /// Le rafraîchissement en cours, s'il y en a un.
+  ///
+  /// Rien n'empêchait deux lectures de tourner en même temps — le
+  /// bouton de la barre est désactivé pendant le chargement, mais pas le
+  /// tirer-vers-le-bas. Le plus lent gagnait, et une saisie tout juste
+  /// enregistrée disparaissait de la liste.
+  Future<void>? _enCours;
+
+  Future<void> rafraichir() {
+    final dejaLa = _enCours;
+    if (dejaLa != null) return dejaLa;
+    final f = _rafraichir();
+    _enCours = f;
+    return f.whenComplete(() {
+      if (_enCours == f) _enCours = null;
+    });
+  }
+
+  Future<void> _rafraichir() async {
     if (moi == null) return;
     chargement = true;
     erreur = null;
@@ -246,6 +277,11 @@ class Etat extends ChangeNotifier {
       lire('mon profil', Api.monProfil, null, actuel: moi),
       lire('sorties de zone', () => Api.sorties(fermeId: portee),
           <SortieZone>[], actuel: sorties),
+      // L'effectif vivant vient de la base, qui lit TOUTES les
+      // déclarations de mortalité. Le téléphone n'en charge que les 500
+      // dernières et croyait le cheptel plus grand qu'il n'est.
+      lire('effectifs', () => Api.batimentsVivants(fermeId: portee),
+          <String, Vivantes>{}, actuel: vivants),
     ]);
 
     fermes = resultats[0] as List<Ferme>;
@@ -270,22 +306,31 @@ class Etat extends ChangeNotifier {
     final profilFrais = resultats[19] as Profil?;
     if (profilFrais != null) moi = profilFrais;
     sorties = resultats[20] as List<SortieZone>;
+    vivants = resultats[21] as Map<String, Vivantes>;
 
     // Tout est tombé : c'est le réseau, pas une table absente.
     if (echouees == tentees) {
       erreur = 'Pas de connexion. Les données affichées peuvent dater.';
     } else if (manquants.isNotEmpty) {
+      // Le fermier lisait « la partie « effectifs » n'est pas encore
+      // installée dans la base » : une phrase d'informaticien, et rien
+      // qu'il puisse faire. On nomme ce qui manque et qui s'en occupe.
       erreur = manquants.length == 1
-          ? 'La partie « ${manquants.first} » n’est pas encore installée '
-              'dans la base. Le reste fonctionne.'
-          : '${manquants.length} parties ne sont pas encore installées '
-              'dans la base (${manquants.join(', ')}). Le reste fonctionne.';
+          ? 'La partie « ${manquants.first} » n’est pas encore en service. '
+              'Tout le reste fonctionne ; votre administrateur le sait.'
+          : '${manquants.length} parties ne sont pas encore en service '
+              '(${manquants.join(', ')}). Tout le reste fonctionne ; '
+              'votre administrateur le sait.';
     } else if (echouees > 0) {
-      erreur = '$echouees information(s) n’ont pas pu être chargées. '
-          'Tirez vers le bas pour réessayer.';
+      erreur = echouees == 1
+          ? 'Une information n’a pas pu être chargée. '
+              'Tirez vers le bas pour réessayer.'
+          : '$echouees informations n’ont pas pu être chargées. '
+              'Tirez vers le bas pour réessayer.';
     }
 
     chargement = false;
+    tour++;
     notifyListeners();
   }
 
@@ -308,6 +353,24 @@ class Etat extends ChangeNotifier {
     }
     if (t.contains('row-level security') || t.contains('violates')) {
       return 'Action refusée : vous n’avez pas le droit de faire cela.';
+    }
+    // Les refus écrits en français dans les fichiers SQL arrivaient à
+    // l'éleveur noyés dans « PostgrestException(message: …, code: P0001,
+    // details: …) ». On ne garde que la phrase.
+    if (e is PostgrestException) {
+      final code = e.code ?? '';
+      if (code == 'PGRST202' || code == 'PGRST205') {
+        return 'Cette partie n’est pas encore en service : l’installation '
+            'doit être terminée.';
+      }
+      final m = e.message.trim();
+      if (m.isNotEmpty) return m;
+    }
+    final i = t.indexOf('message: ');
+    if (i >= 0) {
+      final reste = t.substring(i + 9);
+      final fin = reste.indexOf(', code:');
+      return fin > 0 ? reste.substring(0, fin) : reste;
     }
     return t.replaceFirst('Exception: ', '');
   }
@@ -475,19 +538,40 @@ class Etat extends ChangeNotifier {
       batiments.where((b) => b.fermeId == fermeId).toList();
 
   // ── Le cheptel vivant ──────────────────────────────────────────────
-  /// Toutes les poules mortes depuis la mise en place du bâtiment.
-  int mortsCumules(String batimentId) => mortalites
-      .where((m) => m.batimentId == batimentId)
-      .fold<int>(0, (s, m) => s + m.nombre);
-
-  /// L'effectif réellement présent : l'arrivage moins les morts déclarées.
-  /// C'est lui qui doit servir au taux de ponte, jamais l'effectif de départ.
-  int effectifVivant(Batiment b) {
-    final v = b.nbPoules - mortsCumules(b.id);
-    return v < 0 ? 0 : v;
+  /// Toutes les poules mortes depuis le comptage du fermier.
+  ///
+  /// Le chiffre vient de la base, qui lit toutes les déclarations. Le
+  /// téléphone n'en charge que les 500 dernières : passé quelques mois
+  /// il oubliait les plus anciennes, croyait le cheptel plus grand, et
+  /// n'affichait pas la même chose au gérant et à l'administrateur.
+  int mortsCumules(String batimentId) {
+    final v = vivants[batimentId];
+    if (v != null) return v.morts;
+    // Le repli doit compter CE QUE COMPTE LA BASE, et pas autre chose :
+    // les morts déclarées après la journée du comptage. Sinon le jour
+    // où le fichier SQL est lancé, le cheptel « remonte » tout seul
+    // sans que rien ne change dans le poulailler.
+    final b = batiment(batimentId);
+    final borne = b?.effectifPoseLe;
+    return mortalites
+        .where((m) =>
+            m.batimentId == batimentId &&
+            (borne == null ||
+                (m.date != null && m.date!.isAfter(jourDe(borne)))))
+        .fold<int>(0, (s, m) => s + m.nombre);
   }
 
-  /// Mortalité cumulée en % de l'effectif de départ.
+  /// L'effectif réellement présent : le comptage moins les morts
+  /// déclarées depuis. C'est lui qui doit servir au taux de ponte,
+  /// jamais l'effectif de départ.
+  int effectifVivant(Batiment b) {
+    final v = vivants[b.id];
+    if (v != null) return v.vivantes;
+    final reste = b.nbPoules - mortsCumules(b.id);
+    return reste < 0 ? 0 : reste;
+  }
+
+  /// Mortalité cumulée en % du comptage de départ.
   double tauxMortalite(Batiment b) =>
       b.nbPoules > 0 ? mortsCumules(b.id) / b.nbPoules * 100 : 0;
 
@@ -586,6 +670,7 @@ class Etat extends ChangeNotifier {
     final j = date ?? aujourdhui();
     return productions
         .where((p) =>
+            p.statut == Statut.valide &&
             (fermeId == null || p.fermeId == fermeId) &&
             p.date != null &&
             iso(p.date!) == iso(j))
@@ -605,6 +690,7 @@ class Etat extends ChangeNotifier {
     return List.generate(jours, (i) {
       final j = base.subtract(Duration(days: jours - 1 - i));
       final lot = productions.where((p) =>
+          p.statut == Statut.valide &&
           (fermeId == null || p.fermeId == fermeId) &&
           p.date != null &&
           iso(p.date!) == iso(j));

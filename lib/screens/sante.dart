@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/comparaison.dart';
 import '../core/elevage.dart';
 import '../core/format.dart';
 import '../core/theme.dart';
@@ -24,22 +25,71 @@ class EcranSante extends StatefulWidget {
 class _EcranSanteState extends State<EcranSante> {
   String? _batimentOuvert;
 
+  /// Le pourcentage de ponte de chaque bâtiment, tel que la BASE l'a
+  /// calculé — le téléphone ne connaît qu'une partie des mortalités et
+  /// des productions. Tout arrive en un seul appel : un appel par
+  /// bâtiment, c'était autant d'occasions d'échouer. Voir sql/17.
+  Map<String, PonteComparee>? _ponte;
+  Panne? _panne;
+  String? _cle;
+
+  /// Le numéro de la demande en cours. Une réponse d'un numéro périmé
+  /// est jetée. Une garde « une seule demande à la fois » avalait le
+  /// premier tirer-vers-le-bas après un échec : il fallait tirer deux
+  /// fois, et sur un réseau guinéen c'était le cas normal.
+  int _demande = 0;
+
+  void _assurerPonte(String? ferme, int tour) {
+    // Le tour de lecture est dans la clé : après une déclaration de
+    // mortalité, la même carte affichait « Vivantes 1 950 » rafraîchi
+    // et « Ponte 92 % » calculé sur 2 000.
+    final cle = '${ferme ?? 'tout'}|$tour';
+    if (_cle == cle) return;
+    _cle = cle;
+    _chargerPonte(++_demande, ferme);
+  }
+
+  Future<void> _chargerPonte(int demande, String? ferme) async {
+    try {
+      final p = await Api.ponteCompareeParBatiment(fermeId: ferme)
+          .timeout(const Duration(seconds: 25));
+      if (!mounted || demande != _demande) return;
+      setState(() {
+        _ponte = p;
+        _panne = null;
+      });
+    } catch (e) {
+      // On garde les chiffres précédents : les effacer avant de tenter
+      // la lecture privait l'utilisateur des seuls qu'il avait.
+      if (!mounted || demande != _demande) return;
+      setState(() => _panne = panneDe(e));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final etat = context.watch<Etat>();
     final batiments = etat.estAdmin
         ? etat.batiments
         : etat.batimentsDe(etat.maFermeId);
+    _assurerPonte(etat.estAdmin ? null : etat.maFermeId, etat.tour);
 
     final effectifDepart =
         batiments.fold<int>(0, (s, b) => s + b.nbPoules);
     final vivantes =
         batiments.fold<int>(0, (s, b) => s + etat.effectifVivant(b));
-    final mortsTotal = effectifDepart - vivantes;
+    // Une soustraction entre deux sources — l'effectif venu de la table
+    // et les vivantes venues de la vue — affichait « Mortalité cumulée
+    // −32,7 % » quand une des deux lectures échouait. Même source pour
+    // les deux chiffres.
+    final mortsTotal =
+        batiments.fold<int>(0, (s, b) => s + etat.mortsCumules(b.id));
     final mortsAujourdhui = batiments.fold<int>(
         0, (s, b) => s + etat.mortsDuJour(b.id, aujourdhui()));
 
     return RefreshIndicator(
+      // Le tour de lecture change à la fin du rafraîchissement, donc
+      // les pourcentages se redemandent tout seuls.
       onRefresh: etat.rafraichir,
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
@@ -48,13 +98,13 @@ class _EcranSanteState extends State<EcranSante> {
             CarteChiffre(
                 libelle: 'Poules vivantes',
                 valeur: nb(vivantes),
-                complement: 'sur ${nb(effectifDepart)} mises en place',
+                complement: 'sur ${nb(effectifDepart)} comptées',
                 couleur: Palette.vert,
                 icone: Icons.groups_rounded),
             CarteChiffre(
                 libelle: 'Mortalité cumulée',
                 valeur: effectifDepart > 0
-                    ? '${(mortsTotal / effectifDepart * 100).toStringAsFixed(1)} %'
+                    ? pourcent(mortsTotal / effectifDepart * 100)
                     : '—',
                 complement: '${nb(mortsTotal)} poules',
                 couleur: Palette.rouge,
@@ -75,6 +125,30 @@ class _EcranSanteState extends State<EcranSante> {
                 icone: Icons.warehouse_rounded),
           ]),
           const SizedBox(height: 18),
+          // Une seule fois, en haut : la même phrase répétée sur chaque
+          // carte, et un rouage par carte, encombraient tout l'écran.
+          if (_panne != null && _ponte == null) ...[
+            Bandeau(
+              titre: 'Pourcentage de ponte indisponible',
+              texte: direPanne(_panne!),
+              couleur: Palette.orFonce,
+              icone: _panne == Panne.reseau
+                  ? Icons.wifi_off_rounded
+                  : Icons.build_outlined,
+            ),
+            const SizedBox(height: 14),
+          ] else if (_ponte == null) ...[
+            Row(children: [
+              const SizedBox(
+                  width: 15,
+                  height: 15,
+                  child: CircularProgressIndicator(strokeWidth: 2)),
+              const SizedBox(width: 10),
+              Text('Calcul des pourcentages de ponte…',
+                  style: Theme.of(context).textTheme.bodySmall),
+            ]),
+            const SizedBox(height: 14),
+          ],
           if (batiments.isEmpty)
             const Bloc(
                 enfant: Vide('Aucun bâtiment',
@@ -91,6 +165,194 @@ class _EcranSanteState extends State<EcranSante> {
   // ══════════════════════════════════════════════════════════════════
   // UN BÂTIMENT
   // ══════════════════════════════════════════════════════════════════
+  /// L'effectif a été compté par un fermier, pas par un responsable.
+  /// Tout le pourcentage de ponte et le taux de mortalité reposent sur
+  /// ce nombre : s'il est faux, tous les chiffres du bâtiment le sont.
+  Widget _effectifAVerifier(BuildContext context, Etat etat, Batiment b) {
+    final qui = etat.personnes
+        .cast<Profil?>()
+        .firstWhere((p) => p?.id == b.effectifPosePar, orElse: () => null);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+      child: Bandeau(
+        titre: 'Effectif à vérifier',
+        texte: '${qui?.nomComplet ?? 'Quelqu’un'} a compté '
+            '${nb(b.nbPoules)} poulets le ${jourMois(b.effectifPoseLe)}. '
+            'Tout le pourcentage de ponte et la mortalité reposent sur ce '
+            'nombre : si le compte est bon, confirmez ; sinon, corrigez-le.',
+        couleur: Palette.orFonce,
+        icone: Icons.pets_outlined,
+        action: Row(mainAxisSize: MainAxisSize.min, children: [
+          TextButton(
+            onPressed: () => _corriger(context, etat, b),
+            child: const Text('Corriger'),
+          ),
+          const SizedBox(width: 4),
+          FilledButton(
+            onPressed: () async {
+              final erreur =
+                  await etat.agir(() => Api.confirmerEffectif(b.id));
+              if (!context.mounted) return;
+              message(context, erreur ?? 'Effectif confirmé',
+                  erreur: erreur != null);
+            },
+            child: const Text('Confirmer'),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  /// Corriger une faute de frappe sur le comptage.
+  ///
+  /// Sans ce chemin, un fermier qui tapait 20 000 au lieu de 2 000
+  /// faussait tous les pourcentages de son bâtiment pour toujours : lui
+  /// ne pouvait plus y revenir, et son gérant n'a pas accès à la fiche
+  /// du bâtiment. La date du comptage n'est pas déplacée, donc les
+  /// morts déjà déclarées restent déduites.
+  Future<void> _corriger(
+      BuildContext context, Etat etat, Batiment b) async {
+    final champ = TextEditingController(text: '${b.nbPoules}');
+    final n = await showDialog<int>(
+      context: context,
+      builder: (d) => AlertDialog(
+        title: Text('Corriger l’effectif de ${b.nom}'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text(
+              'Le comptage du ${jourMois(b.effectifPoseLe)} dit '
+              '${nb(b.nbPoules)} poulets. Les ${nb(etat.mortsCumules(b.id))} '
+              'morts déclarées depuis restent déduites.',
+              style: Theme.of(d).textTheme.bodySmall),
+          const SizedBox(height: 14),
+          TextField(
+            controller: champ,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+                labelText: 'Nombre de poulets comptés', isDense: true),
+          ),
+        ]),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(d), child: const Text('Annuler')),
+          FilledButton(
+            onPressed: () =>
+                Navigator.pop(d, int.tryParse(champ.text.trim()) ?? 0),
+            child: const Text('Enregistrer'),
+          ),
+        ],
+      ),
+    );
+    champ.dispose();
+    if (n == null) return;
+    if (n <= 0) {
+      if (!context.mounted) return;
+      message(context, 'Indiquez le bon nombre de poulets.', erreur: true);
+      return;
+    }
+    final erreur = await etat.agir(() => Api.corrigerEffectif(b.id, n));
+    if (!context.mounted) return;
+    message(context, erreur ?? '${nb(n)} poulets enregistrés',
+        erreur: erreur != null);
+  }
+
+  /// Le pourcentage de ponte, et ce qu'il valait avant.
+  ///
+  /// Les chiffres viennent de la BASE : le téléphone ne connaît qu'une
+  /// partie des mortalités et des productions, et un pourcentage bâti
+  /// là-dessus est faux. Voir sql/17_idiama_ponte.sql.
+  Widget _comparaison(BuildContext context, Batiment b) {
+    final tout = _ponte;
+    // Ni rouage ni message ici : le haut de l'écran le dit déjà, une
+    // seule fois pour tous les bâtiments.
+    if (tout == null) return const SizedBox.shrink();
+
+    if (b.nbPoules <= 0) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+        child: Row(children: [
+          Icon(Icons.pets_outlined,
+              size: 17, color: Theme.of(context).hintColor),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+                'Personne n’a encore compté les poules de ce bâtiment. '
+                'Le fermier le fait depuis l’onglet Production, et le '
+                'pourcentage de ponte apparaît aussitôt.',
+                style: Theme.of(context).textTheme.bodySmall),
+          ),
+        ]),
+      );
+    }
+
+    // Absent de la réponse = aucune saisie validée sur la période.
+    final p = tout[b.id] ?? PonteComparee.vide;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const TitreSection('Pourcentage de ponte'),
+        _ligneComparaison(context, 'Aujourd’hui', p.jour, p.jourAvant, 'hier'),
+        _ligneComparaison(context, '7 derniers jours', p.septJours,
+            p.septJoursAvant, 'les 7 jours d’avant'),
+        _ligneComparaison(
+            context, 'Ce mois', p.mois, p.moisAvant, 'le mois passé'),
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Text(
+              'Œufs ramassés rapportés aux poules vivantes de chaque jour — '
+              'la mortalité déclarée est déduite. Seules les saisies '
+              'validées comptent.',
+              style: Theme.of(context).textTheme.bodySmall),
+        ),
+      ]),
+    );
+  }
+
+  Widget _ligneComparaison(BuildContext context, String quand, Ponte maintenant,
+      Ponte avant, String contre) {
+    final points = PonteComparee.ecart(maintenant, avant);
+    final couleur = points == null
+        ? Palette.gris
+        // « comme avant » en orange contredisait le mot : sous un demi
+        // point d'écart, il n'y a rien à signaler.
+        : (points.abs() < 0.5
+            ? Palette.gris
+            : (points >= 0.5
+                ? Palette.vert
+                : (points > -2 ? Palette.orFonce : Palette.rouge)));
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(children: [
+        SizedBox(
+          width: 104,
+          child: Text(quand, style: Theme.of(context).textTheme.bodySmall),
+        ),
+        Text(
+            maintenant.invraisemblable ? '?' : pourcent(maintenant.taux),
+            style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                fontFeatures: [FontFeature.tabularFigures()])),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+              maintenant.invraisemblable
+                  ? 'plus d’un œuf par poule : vérifiez les alvéoles saisies'
+                  : (points == null
+                      ? PonteComparee.direPourquoiRien(
+                          maintenant, avant, contre)
+                      : '${PonteComparee.direEcart(points)} contre $contre'),
+              style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600,
+                  color: maintenant.invraisemblable
+                      ? Palette.orFonce
+                      : couleur)),
+        ),
+      ]),
+    );
+  }
+
   Widget _carteBatiment(BuildContext context, Etat etat, Batiment b) {
     final vivantes = etat.effectifVivant(b);
     final taux = etat.tauxMortalite(b);
@@ -98,19 +360,35 @@ class _EcranSanteState extends State<EcranSante> {
     final semaines = b.ageSemaines;
     final attendu = b.ageConnu ? ponteAttendue(semaines) : 0;
 
-    // Le taux de ponte réel des 7 derniers jours, sur l'effectif VIVANT.
-    final depuis = aujourdhui().subtract(const Duration(days: 7));
-    final prods = etat.productions.where(
-        (p) => p.batimentId == b.id && p.date != null && !p.date!.isBefore(depuis));
-    final joursSaisis = prods.map((p) => iso(p.date!)).toSet().length;
-    final oeufs = prods.fold<int>(0, (s, p) => s + p.oeufs);
-    final ponteReelle = (vivantes > 0 && joursSaisis > 0)
-        ? oeufs / (vivantes * joursSaisis) * 100
-        : -1.0;
+    // Le taux de ponte des 7 derniers jours, calculé par la BASE sur les
+    // poules vivantes de chaque jour. Le téléphone le calculait lui-même
+    // sur sa liste tronquée, sans filtrer les saisies non validées, et
+    // divisait par le cheptel d'AUJOURD'HUI : un lot qui pondait pareil
+    // paraissait en chute.
+    final sept = _ponte?[b.id]?.septJours ?? Ponte.vide;
+    final ponteReelle = sept.invraisemblable ? null : sept.taux;
+    // Au moins quatre journées de ramassage avant de juger un lot sur
+    // le standard de son âge : avec une seule saisie partielle, le
+    // bandeau « Ponte inférieure au standard » tombait à tort.
+    final ecart =
+        (b.ageConnu && ponteReelle != null && attendu > 0 && sept.jours >= 4)
+            ? ponteReelle - attendu
+            : null;
 
-    final ecart = (b.ageConnu && ponteReelle >= 0 && attendu > 0)
-        ? ponteReelle - attendu
-        : null;
+    // Depuis combien de jours plus personne ne saisit ? Un bâtiment à
+    // l'arrêt affichait « 2 000 vivantes, mortalité 0,0 % » en vert,
+    // et rien ne disait que plus rien n'y était ramassé.
+    final derniere = etat.productions
+        .where((p) => p.batimentId == b.id && p.date != null)
+        .fold<DateTime?>(
+            null,
+            (d, p) =>
+                d == null || p.date!.isAfter(d) ? p.date : d);
+    final silence = b.nbPoules > 0
+        ? (derniere == null
+            ? -1
+            : aujourdhui().difference(jourDe(derniere)).inDays)
+        : 0;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
@@ -147,26 +425,44 @@ class _EcranSanteState extends State<EcranSante> {
             ),
           ),
 
+          // ── L'effectif posé par un fermier, à vérifier ──
+          // Le gérant le voit aussi : il est sur place, c'est lui qui
+          // peut aller recompter, et le fermier ne peut plus y revenir.
+          if ((etat.estAdmin || etat.estGerant) &&
+              b.nbPoules > 0 &&
+              b.effectifPosePar != null &&
+              !b.effectifConfirme)
+            _effectifAVerifier(context, etat, b),
+
+          // ── La ponte, comparée à avant ──
+          _comparaison(context, b),
+
           // ── Les trois chiffres ──
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
             child: Row(children: [
-              _tuile(context, 'Vivantes', nb(vivantes),
-                  'sur ${nb(b.nbPoules)}', Palette.vert),
+              _tuile(
+                  context,
+                  'Vivantes',
+                  b.nbPoules > 0 ? nb(vivantes) : '—',
+                  b.nbPoules > 0 ? 'sur ${nb(b.nbPoules)} comptées' : 'à compter',
+                  b.nbPoules > 0 ? Palette.vert : Palette.gris),
               _tuile(
                   context,
                   'Mortalité',
-                  '${taux.toStringAsFixed(1)} %',
+                  b.nbPoules > 0 ? pourcent(taux) : '—',
                   b.ageConnu
-                      ? 'normal < ${mortaliteAcceptable(semaines).toStringAsFixed(1)} %'
+                      ? 'normal < ${pourcent(mortaliteAcceptable(semaines))}'
                       : 'cumulée',
-                  taux <= mortaliteAcceptable(b.ageConnu ? semaines : 0)
-                      ? Palette.vert
-                      : Palette.rouge),
+                  b.nbPoules == 0
+                      ? Palette.gris
+                      : (taux <= mortaliteAcceptable(b.ageConnu ? semaines : 0)
+                          ? Palette.vert
+                          : Palette.rouge)),
               _tuile(
                   context,
                   'Ponte 7 j',
-                  ponteReelle < 0 ? '—' : '${ponteReelle.toStringAsFixed(0)} %',
+                  ponteReelle == null ? '—' : pourcent(ponteReelle, decimales: 0),
                   b.ageConnu ? 'attendu $attendu %' : 'âge inconnu',
                   ecart == null
                       ? Palette.gris
@@ -184,11 +480,54 @@ class _EcranSanteState extends State<EcranSante> {
                 titre: 'Ponte inférieure au standard de son âge',
                 texte:
                     'À $semaines semaines, un lot en bonne santé pond autour de '
-                    '$attendu %. Celui-ci est à ${ponteReelle.toStringAsFixed(0)} %, '
-                    'soit ${ecart.abs().toStringAsFixed(0)} points de moins. '
-                    'Regardez l’aliment, l’eau, la chaleur et les vaccins.',
+                    '$attendu %. Celui-ci est à ${pourcent(ponteReelle, decimales: 0)}, '
+                    'soit ${ecart.abs().toStringAsFixed(0)} points de moins, '
+                    'sur ${sept.jours} journée${sept.jours > 1 ? 's' : ''} de '
+                    'ramassage. Regardez l’aliment, l’eau, la chaleur et les '
+                    'vaccins.',
                 couleur: ecart < -20 ? Palette.rouge : Palette.orFonce,
                 icone: Icons.trending_down_rounded,
+              ),
+            ),
+          // Les morts déclarées dépassent le nombre compté : le cheptel
+          // tombe à zéro, toutes les journées sortent du pourcentage, et
+          // le taux affiché se figeait sur sa dernière valeur saine sans
+          // que rien ne l'explique.
+          if (b.nbPoules > 0 && vivantes == 0)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+              child: Bandeau(
+                titre: 'Cheptel déclaré à zéro',
+                texte:
+                    'Les ${nb(etat.mortsCumules(b.id))} morts déclarées égalent '
+                    'ou dépassent les ${nb(b.nbPoules)} poules comptées. Tant '
+                    'que c’est le cas, aucun pourcentage de ponte ne peut être '
+                    'calculé pour ce bâtiment. Vérifiez les déclarations de '
+                    'mortalité, ou corrigez l’effectif compté.',
+                couleur: Palette.rouge,
+                icone: Icons.error_outline_rounded,
+              ),
+            ),
+          // Un bâtiment à l'arrêt avait l'air en pleine forme : « 2 000
+          // vivantes, mortalité 0,0 % », en vert, et rien ne disait que
+          // plus personne n'y ramassait.
+          if (silence >= 3 || silence == -1)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+              child: Bandeau(
+                titre: silence == -1
+                    ? 'Aucun ramassage jamais saisi'
+                    : 'Plus de ramassage depuis $silence jours',
+                texte: silence == -1
+                    ? 'Ce bâtiment a des poules mais aucune journée de '
+                        'ramassage n’a été enregistrée. Sans saisie, aucun '
+                        'pourcentage de ponte ne peut être calculé.'
+                    : 'La dernière journée saisie est le '
+                        '${jour(derniere)}. Tant que le ramassage n’est pas '
+                        'enregistré, le pourcentage de ponte ne veut plus rien '
+                        'dire.',
+                couleur: silence >= 7 ? Palette.rouge : Palette.orFonce,
+                icone: Icons.event_busy_outlined,
               ),
             ),
           if (!b.ageConnu)
@@ -198,8 +537,7 @@ class _EcranSanteState extends State<EcranSante> {
                 titre: 'Renseignez le jour d’arrivage',
                 texte:
                     'Sans lui, pas d’âge, donc pas de calendrier vaccinal ni de '
-                    'comparaison au standard. Modifiez le bâtiment depuis la '
-                    'fiche de la ferme.',
+                    'comparaison au standard. ${etat.estAdmin ? 'Modifiez le bâtiment depuis l’onglet Fermes.' : 'Demandez-le à votre administrateur.'}',
                 couleur: Palette.orFonce,
                 icone: Icons.event_busy_outlined,
               ),
@@ -219,6 +557,24 @@ class _EcranSanteState extends State<EcranSante> {
                 label: const Text('Déclarer des morts'),
               ),
             ),
+            // Confirmer veut dire « j'ai regardé », pas « le nombre est
+            // scellé » : après une première correction, le gérant
+            // n'avait plus aucun chemin pour en faire une seconde.
+            if ((etat.estAdmin || etat.estGerant) && b.nbPoules > 0) ...[
+              Container(
+                  width: 1, height: 28, color: Theme.of(context).dividerColor),
+              Expanded(
+                child: TextButton.icon(
+                  style: TextButton.styleFrom(
+                      foregroundColor: Palette.orFonce,
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                      shape: const RoundedRectangleBorder()),
+                  onPressed: () => _corriger(context, etat, b),
+                  icon: const Icon(Icons.pets_outlined, size: 18),
+                  label: const Text('Effectif'),
+                ),
+              ),
+            ],
             Container(
                 width: 1, height: 28, color: Theme.of(context).dividerColor),
             Expanded(
@@ -477,7 +833,7 @@ class _EcranSanteState extends State<EcranSante> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('${m.nombre} poule(s) · ${jour(m.date)}',
+                        Text('${m.nombre} poule${m.nombre > 1 ? 's' : ''} · ${jour(m.date)}',
                             style: const TextStyle(
                                 fontSize: 13, fontWeight: FontWeight.w600)),
                         Text(
@@ -508,8 +864,8 @@ class _EcranSanteState extends State<EcranSante> {
       BuildContext context, Etat etat, Mortalite m) async {
     final ok = await confirmer(context,
         titre: 'Supprimer cette déclaration ?',
-        texte: '${m.nombre} poule(s) le ${jour(m.date)}. '
-            'L’effectif vivant remontera d’autant.',
+        texte: '${m.nombre} poule${m.nombre > 1 ? 's' : ''} le ${jour(m.date)}. '
+            'L’effectif vivant sera recalculé.',
         ok: 'Supprimer',
         danger: true,
         icone: Icons.delete_outline_rounded);
