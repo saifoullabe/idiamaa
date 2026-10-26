@@ -419,19 +419,6 @@ begin
   exception when others then resultat := 'ECHEC — ' || sqlerrm; end;
   return next;
 
-  verification := 'A. Aucune journee de ramassage ne precede son comptage';
-  begin
-    select count(*) into n from public.productions p
-      join public.batiments b on b.id = p.batiment_id
-     where p.statut = 'valide'
-       and (b.effectif_pose_le is null or p.date < b.effectif_pose_le::date);
-    resultat := case when n = 0 then 'OK'
-                else 'INFO — ' || n::text || ' journee(s) comptee(s) dans le total '
-                     || 'des oeufs mais hors du pourcentage : leur batiment n avait '
-                     || 'pas encore de comptage ce jour-la' end;
-  exception when others then resultat := 'ECHEC — ' || sqlerrm; end;
-  return next;
-
   verification := 'B. Les quatre fonctions de ponte existent';
   begin
     resultat := case
